@@ -81,6 +81,7 @@ class _GimmeHomeState extends State<GimmeHome> {
   bool _loaded = false;
   EntitlementSnapshot _entitlement = const EntitlementSnapshot.free();
   bool _remindersEnabled = false;
+  String? _billingStatus;
   SharedPreferences? _prefs;
   final StoreEntitlementBridge _storeEntitlementBridge =
       StoreEntitlementBridge();
@@ -96,6 +97,7 @@ class _GimmeHomeState extends State<GimmeHome> {
     if (!kIsWeb) {
       _purchaseSubscription = _storeEntitlementBridge.listenForPurchaseUpdates(
         onEntitlement: _handleStoreEntitlement,
+        onStatusMessage: _setBillingStatus,
       );
     }
     _loadState();
@@ -159,6 +161,16 @@ class _GimmeHomeState extends State<GimmeHome> {
       _remindersEnabled = remindersEnabled;
       _loaded = true;
     });
+    if (!kIsWeb && entitlement.shouldRefreshStoreEntitlement(DateTime.now())) {
+      await _refreshStoreEntitlement();
+    }
+  }
+
+  void _setBillingStatus(String message) {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _billingStatus = message);
   }
 
   Future<void> _saveProfile(HouseholdProfile profile) async {
@@ -229,9 +241,17 @@ class _GimmeHomeState extends State<GimmeHome> {
   }
 
   Future<void> _setPreviewEntitlement(bool value) async {
+    if (!kIsWeb && !value && _entitlement.source == EntitlementSource.store) {
+      _setBillingStatus(
+        '解約はApp Store / Google Playの購読管理から行ってください。期限確認後にPlus状態へ反映します。',
+      );
+      return;
+    }
     if (!kIsWeb && value) {
+      _setBillingStatus('ストア購入を開始しています。');
       final started = await _storeEntitlementBridge.startPlusPurchase();
       if (!started) {
+        _setBillingStatus('ストア商品を読み込めませんでした。商品IDとテストトラック設定を確認してください。');
         return;
       }
       return;
@@ -260,13 +280,30 @@ class _GimmeHomeState extends State<GimmeHome> {
     if (!mounted) {
       return;
     }
-    setState(() => _entitlement = entitlement);
+    setState(() {
+      _entitlement = entitlement;
+      _billingStatus = entitlement.statusLabel;
+    });
     if (prefs != null) {
-      await PreviewEntitlementRepository(prefs).saveStoreEntitlement();
+      final stored = await PreviewEntitlementRepository(prefs)
+          .saveStoreEntitlement(
+            verifiedAt: entitlement.verifiedAt,
+            expiresAt: entitlement.expiresAt,
+            purchaseId: entitlement.purchaseId,
+          );
+      if (mounted) {
+        setState(() => _entitlement = stored);
+      }
     }
   }
 
   Future<void> _restorePurchases() async {
+    _setBillingStatus('購入履歴をストアと再同期しています。');
+    await _storeEntitlementBridge.restorePurchases();
+  }
+
+  Future<void> _refreshStoreEntitlement() async {
+    _setBillingStatus('Plusの有効期限が近いため、ストアと自動再同期しています。');
     await _storeEntitlementBridge.restorePurchases();
   }
 
@@ -427,6 +464,7 @@ class _GimmeHomeState extends State<GimmeHome> {
           entitlement: _entitlement,
           remindersEnabled: _remindersEnabled,
           reminderPlan: reminderPlan,
+          billingStatus: _billingStatus,
           onUnlockChanged: _setPreviewEntitlement,
           onRestorePurchases: _restorePurchases,
           onRemindersChanged: _setRemindersEnabled,
@@ -2083,6 +2121,7 @@ class PaywallPage extends StatelessWidget {
     required this.entitlement,
     required this.remindersEnabled,
     required this.reminderPlan,
+    required this.billingStatus,
     required this.onUnlockChanged,
     required this.onRestorePurchases,
     required this.onRemindersChanged,
@@ -2091,6 +2130,7 @@ class PaywallPage extends StatelessWidget {
   final EntitlementSnapshot entitlement;
   final bool remindersEnabled;
   final List<GimmeReminder> reminderPlan;
+  final String? billingStatus;
   final Future<void> Function(bool value) onUnlockChanged;
   final Future<void> Function() onRestorePurchases;
   final Future<void> Function(bool value) onRemindersChanged;
@@ -2098,6 +2138,7 @@ class PaywallPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unlocked = entitlement.unlocked;
+    final expiry = entitlement.expiresAt;
     return Scaffold(
       appBar: AppBar(title: const Text('Gimme Plus')),
       body: SafeArea(
@@ -2189,10 +2230,34 @@ class PaywallPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         _PlanRow(label: '権限状態', value: entitlement.badgeLabel),
+                        _PlanRow(label: '同期状態', value: entitlement.statusLabel),
+                        if (expiry != null)
+                          _PlanRow(
+                            label: 'Plus確認期限',
+                            value: formatEntitlementDate(expiry),
+                          ),
                         _PlanRow(
                           label: '通知予定',
                           value: '${reminderPlan.length}件',
                         ),
+                        if (billingStatus != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6F5),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              billingStatus!,
+                              style: const TextStyle(
+                                color: Color(0xFF0F766E),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           value: unlocked && remindersEnabled,
@@ -2232,7 +2297,9 @@ class PaywallPage extends StatelessWidget {
                           ),
                           label: Text(
                             unlocked
-                                ? 'Plusプレビューを解除'
+                                ? kIsWeb
+                                      ? 'Plusプレビューを解除'
+                                      : 'ストア購読の管理案内'
                                 : kIsWeb
                                 ? 'Web確認版でPlusを試す'
                                 : 'ストアでPlusを開始',
@@ -2250,7 +2317,7 @@ class PaywallPage extends StatelessWidget {
                         Text(
                           kIsWeb
                               ? '商品ID: $gimmePlusProductId。Web確認版では購入を発生させず、Android/iOS正式版ではアプリ内課金ブリッジからGoogle Play Billing / StoreKitへ接続します。'
-                              : '商品ID: $gimmePlusProductId。購入更新と復元が確認できた時だけStore Plusとして有効化します。',
+                              : '商品ID: $gimmePlusProductId。購入・復元で確認できたStore Plusだけを32日間有効化し、期限前に復元同期します。解約はストア購読管理から行います。',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: const Color(0xFF64748B)),
                         ),

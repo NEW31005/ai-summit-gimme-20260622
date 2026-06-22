@@ -13,6 +13,11 @@ const gimmePlusProductId = 'gimme_plus_monthly';
 const gimmePreviewEntitlementKey = 'premiumUnlocked';
 const gimmeEntitlementSourceKey = 'entitlementSource';
 const gimmeRemindersEnabledKey = 'remindersEnabled';
+const gimmeStoreVerifiedAtKey = 'storeVerifiedAt';
+const gimmeStoreExpiresAtKey = 'storeExpiresAt';
+const gimmeStorePurchaseIdKey = 'storePurchaseId';
+const gimmeStoreEntitlementWindow = Duration(days: 32);
+const gimmeStoreRefreshWindow = Duration(days: 5);
 
 enum EntitlementSource { free, webPreview, store }
 
@@ -21,18 +26,67 @@ class EntitlementSnapshot {
     required this.unlocked,
     required this.source,
     required this.detail,
+    this.verifiedAt,
+    this.expiresAt,
+    this.purchaseId,
   });
 
-  const EntitlementSnapshot.free()
+  const EntitlementSnapshot.free({this.detail = '無料版'})
     : unlocked = false,
       source = EntitlementSource.free,
-      detail = '無料版';
+      verifiedAt = null,
+      expiresAt = null,
+      purchaseId = null;
+
+  factory EntitlementSnapshot.storeActive({
+    required DateTime verifiedAt,
+    DateTime? expiresAt,
+    String? purchaseId,
+  }) {
+    final validUntil = expiresAt ?? verifiedAt.add(gimmeStoreEntitlementWindow);
+    return EntitlementSnapshot(
+      unlocked: true,
+      source: EntitlementSource.store,
+      detail: 'ストア購入で有効（${formatEntitlementDate(validUntil)}まで）',
+      verifiedAt: verifiedAt,
+      expiresAt: validUntil,
+      purchaseId: purchaseId,
+    );
+  }
 
   final bool unlocked;
   final EntitlementSource source;
   final String detail;
+  final DateTime? verifiedAt;
+  final DateTime? expiresAt;
+  final String? purchaseId;
 
   bool get isPreview => source == EntitlementSource.webPreview;
+
+  bool get isStore => source == EntitlementSource.store;
+
+  bool isExpired(DateTime now) {
+    final expiry = expiresAt;
+    return isStore && expiry != null && !expiry.isAfter(now);
+  }
+
+  bool shouldRefreshStoreEntitlement(DateTime now) {
+    final expiry = expiresAt;
+    if (!isStore || expiry == null || isExpired(now)) {
+      return false;
+    }
+    return expiry.difference(now) <= gimmeStoreRefreshWindow;
+  }
+
+  String get statusLabel {
+    if (!unlocked) {
+      return detail;
+    }
+    if (source == EntitlementSource.store && expiresAt != null) {
+      return 'Store Plus 同期済み ${formatEntitlementDate(expiresAt!)}まで';
+    }
+    return detail;
+  }
 
   String get badgeLabel {
     switch (source) {
@@ -46,12 +100,17 @@ class EntitlementSnapshot {
   }
 }
 
+String formatEntitlementDate(DateTime value) {
+  return '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';
+}
+
 class PreviewEntitlementRepository {
   const PreviewEntitlementRepository(this.preferences);
 
   final SharedPreferences preferences;
 
-  Future<EntitlementSnapshot> load() async {
+  Future<EntitlementSnapshot> load({DateTime? now}) async {
+    final current = now ?? DateTime.now();
     final unlocked = preferences.getBool(gimmePreviewEntitlementKey) ?? false;
     final sourceName =
         preferences.getString(gimmeEntitlementSourceKey) ??
@@ -64,12 +123,36 @@ class PreviewEntitlementRepository {
     if (!unlocked) {
       return const EntitlementSnapshot.free();
     }
+    if (source == EntitlementSource.store) {
+      final expiresAt = _dateFromMilliseconds(
+        preferences.getInt(gimmeStoreExpiresAtKey),
+      );
+      final verifiedAt = _dateFromMilliseconds(
+        preferences.getInt(gimmeStoreVerifiedAtKey),
+      );
+      final purchaseId = preferences.getString(gimmeStorePurchaseIdKey);
+      if (expiresAt == null || verifiedAt == null) {
+        await _clearEntitlement();
+        return const EntitlementSnapshot.free(
+          detail: 'Store Plusの期限確認が必要です。購入復元を実行してください。',
+        );
+      }
+      if (!expiresAt.isAfter(current)) {
+        await _clearEntitlement();
+        return const EntitlementSnapshot.free(
+          detail: 'Store Plusの確認期限が切れました。購入復元で再同期してください。',
+        );
+      }
+      return EntitlementSnapshot.storeActive(
+        verifiedAt: verifiedAt,
+        expiresAt: expiresAt,
+        purchaseId: purchaseId,
+      );
+    }
     return EntitlementSnapshot(
       unlocked: true,
-      source: source == EntitlementSource.store
-          ? EntitlementSource.store
-          : EntitlementSource.webPreview,
-      detail: source == EntitlementSource.store ? 'ストア購入で有効' : 'Web確認版のプレビュー権限',
+      source: EntitlementSource.webPreview,
+      detail: 'Web確認版のプレビュー権限',
     );
   }
 
@@ -80,6 +163,9 @@ class PreviewEntitlementRepository {
       value ? EntitlementSource.webPreview.name : EntitlementSource.free.name,
     );
     if (!value) {
+      await preferences.remove(gimmeStoreVerifiedAtKey);
+      await preferences.remove(gimmeStoreExpiresAtKey);
+      await preferences.remove(gimmeStorePurchaseIdKey);
       return const EntitlementSnapshot.free();
     }
     return const EntitlementSnapshot(
@@ -89,13 +175,55 @@ class PreviewEntitlementRepository {
     );
   }
 
-  Future<void> saveStoreEntitlement() async {
+  Future<EntitlementSnapshot> saveStoreEntitlement({
+    DateTime? verifiedAt,
+    DateTime? expiresAt,
+    String? purchaseId,
+  }) async {
+    final verified = verifiedAt ?? DateTime.now();
+    final expiry = expiresAt ?? verified.add(gimmeStoreEntitlementWindow);
     await preferences.setBool(gimmePreviewEntitlementKey, true);
     await preferences.setString(
       gimmeEntitlementSourceKey,
       EntitlementSource.store.name,
     );
+    await preferences.setInt(
+      gimmeStoreVerifiedAtKey,
+      verified.millisecondsSinceEpoch,
+    );
+    await preferences.setInt(
+      gimmeStoreExpiresAtKey,
+      expiry.millisecondsSinceEpoch,
+    );
+    if (purchaseId == null || purchaseId.isEmpty) {
+      await preferences.remove(gimmeStorePurchaseIdKey);
+    } else {
+      await preferences.setString(gimmeStorePurchaseIdKey, purchaseId);
+    }
+    return EntitlementSnapshot.storeActive(
+      verifiedAt: verified,
+      expiresAt: expiry,
+      purchaseId: purchaseId,
+    );
   }
+
+  Future<void> _clearEntitlement() async {
+    await preferences.setBool(gimmePreviewEntitlementKey, false);
+    await preferences.setString(
+      gimmeEntitlementSourceKey,
+      EntitlementSource.free.name,
+    );
+    await preferences.remove(gimmeStoreVerifiedAtKey);
+    await preferences.remove(gimmeStoreExpiresAtKey);
+    await preferences.remove(gimmeStorePurchaseIdKey);
+  }
+}
+
+DateTime? _dateFromMilliseconds(int? value) {
+  if (value == null || value <= 0) {
+    return null;
+  }
+  return DateTime.fromMillisecondsSinceEpoch(value);
 }
 
 class StoreEntitlementBridge {
@@ -141,6 +269,7 @@ class StoreEntitlementBridge {
 
   StreamSubscription<List<PurchaseDetails>> listenForPurchaseUpdates({
     required void Function(EntitlementSnapshot entitlement) onEntitlement,
+    void Function(String message)? onStatusMessage,
     void Function(Object error)? onError,
   }) {
     return purchaseStream.listen((purchases) async {
@@ -151,12 +280,18 @@ class StoreEntitlementBridge {
         if (purchase.status == PurchaseStatus.purchased ||
             purchase.status == PurchaseStatus.restored) {
           onEntitlement(
-            const EntitlementSnapshot(
-              unlocked: true,
-              source: EntitlementSource.store,
-              detail: 'ストア購入で有効',
+            EntitlementSnapshot.storeActive(
+              verifiedAt: DateTime.now(),
+              purchaseId: purchase.purchaseID,
             ),
           );
+          onStatusMessage?.call('Store Plusを再同期しました。');
+        } else if (purchase.status == PurchaseStatus.pending) {
+          onStatusMessage?.call('ストア購入を確認中です。完了後にPlusを有効化します。');
+        } else if (purchase.status == PurchaseStatus.canceled) {
+          onStatusMessage?.call('ストア購入はキャンセルされました。');
+        } else if (purchase.status == PurchaseStatus.error) {
+          onStatusMessage?.call(purchase.error?.message ?? 'ストア購入の確認に失敗しました。');
         }
         if (purchase.pendingCompletePurchase) {
           await _inAppPurchase.completePurchase(purchase);
