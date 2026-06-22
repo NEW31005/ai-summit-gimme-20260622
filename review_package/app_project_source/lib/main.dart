@@ -54,6 +54,7 @@ class _GimmeHomeState extends State<GimmeHome> {
   static const _cityKey = 'city';
   static const _adultsKey = 'adults';
   static const _childrenKey = 'children';
+  static const _supportedOlderChildrenKey = 'supportedOlderChildren';
   static const _medicalCostKey = 'medicalCost';
   static const _subscriptionsKey = 'subscriptions';
   static const _subscriptionCountKey = 'subscriptionCount';
@@ -90,6 +91,9 @@ class _GimmeHomeState extends State<GimmeHome> {
         city: prefs.getString(_cityKey) ?? HouseholdProfile.demo.city,
         adults: prefs.getInt(_adultsKey) ?? HouseholdProfile.demo.adults,
         children: prefs.getInt(_childrenKey) ?? HouseholdProfile.demo.children,
+        supportedOlderChildren:
+            prefs.getInt(_supportedOlderChildrenKey) ??
+            HouseholdProfile.demo.supportedOlderChildren,
         medicalCost:
             prefs.getInt(_medicalCostKey) ?? HouseholdProfile.demo.medicalCost,
         monthlySubscriptions:
@@ -131,6 +135,10 @@ class _GimmeHomeState extends State<GimmeHome> {
     await prefs.setString(_cityKey, profile.city);
     await prefs.setInt(_adultsKey, profile.adults);
     await prefs.setInt(_childrenKey, profile.children);
+    await prefs.setInt(
+      _supportedOlderChildrenKey,
+      profile.supportedOlderChildren,
+    );
     await prefs.setInt(_medicalCostKey, profile.medicalCost);
     await prefs.setInt(_subscriptionsKey, profile.monthlySubscriptions);
     await prefs.setInt(_subscriptionCountKey, profile.subscriptionCount);
@@ -233,13 +241,14 @@ class _GimmeHomeState extends State<GimmeHome> {
                     ? IconButton.filledTonal(
                         onPressed: () => setState(() => _selectedIndex = 3),
                         icon: const Icon(Icons.group_outlined, size: 19),
-                        tooltip: '${_profile.adults + _profile.children}人世帯',
+                        tooltip:
+                            '${_profile.adults + _profile.children + _profile.supportedOlderChildren}人世帯',
                       )
                     : FilledButton.tonalIcon(
                         onPressed: () => setState(() => _selectedIndex = 3),
                         icon: const Icon(Icons.group_outlined, size: 18),
                         label: Text(
-                          '${_profile.adults + _profile.children}人世帯',
+                          '${_profile.adults + _profile.children + _profile.supportedOlderChildren}人世帯',
                         ),
                       ),
               );
@@ -1390,8 +1399,13 @@ class _ScanResultCard extends StatelessWidget {
                   item.name,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                subtitle: Text(item.reason),
-                trailing: Text(formatYen(item.amount)),
+                subtitle: Text(
+                  '${item.periodLabel} / 元金額 ${formatYen(item.rawAmount)} / 確信度 ${item.confidence}%\n${item.reason}',
+                ),
+                trailing: Text(
+                  formatYen(item.amount),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -1491,6 +1505,26 @@ class _HouseholdPageState extends State<_HouseholdPage> {
                   max: 5,
                   onChanged: (value) =>
                       setState(() => _draft = _draft.copyWith(children: value)),
+                ),
+                _StepperRow(
+                  label: '18〜22歳の生計負担あり',
+                  value: _draft.supportedOlderChildren,
+                  min: 0,
+                  max: 6,
+                  unit: '人',
+                  onChanged: (value) => setState(
+                    () =>
+                        _draft = _draft.copyWith(supportedOlderChildren: value),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '児童手当の第3子以降判定に使います。大学生年代などで監護相当・生計費負担がある子だけ入れてください。',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                  ),
                 ),
                 const Divider(height: 28),
                 _AmountSlider(

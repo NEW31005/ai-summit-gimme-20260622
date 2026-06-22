@@ -1,4 +1,10 @@
-const freeVisibleOpportunityCount = 3;
+const freeVisibleOpportunityCount = 2;
+const childAllowanceSourceLabel = 'こども家庭庁 児童手当制度';
+const childAllowanceSourceUrl =
+    'https://www.cfa.go.jp/policies/kokoseido/jidouteate/faq/ippan';
+const medicalDeductionSourceLabel = '国税庁 医療費控除';
+const medicalDeductionSourceUrl =
+    'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1120.htm';
 
 enum OpportunityPeriod {
   oneTime('単発'),
@@ -15,6 +21,7 @@ class HouseholdProfile {
     required this.city,
     required this.adults,
     required this.children,
+    required this.supportedOlderChildren,
     required this.medicalCost,
     required this.monthlySubscriptions,
     required this.subscriptionCount,
@@ -28,6 +35,7 @@ class HouseholdProfile {
   final String city;
   final int adults;
   final int children;
+  final int supportedOlderChildren;
   final int medicalCost;
   final int monthlySubscriptions;
   final int subscriptionCount;
@@ -41,6 +49,7 @@ class HouseholdProfile {
     city: '東京都杉並区',
     adults: 2,
     children: 2,
+    supportedOlderChildren: 1,
     medicalCost: 186000,
     monthlySubscriptions: 16400,
     subscriptionCount: 8,
@@ -55,6 +64,7 @@ class HouseholdProfile {
     String? city,
     int? adults,
     int? children,
+    int? supportedOlderChildren,
     int? medicalCost,
     int? monthlySubscriptions,
     int? subscriptionCount,
@@ -68,6 +78,8 @@ class HouseholdProfile {
       city: city ?? this.city,
       adults: adults ?? this.adults,
       children: children ?? this.children,
+      supportedOlderChildren:
+          supportedOlderChildren ?? this.supportedOlderChildren,
       medicalCost: medicalCost ?? this.medicalCost,
       monthlySubscriptions: monthlySubscriptions ?? this.monthlySubscriptions,
       subscriptionCount: subscriptionCount ?? this.subscriptionCount,
@@ -234,12 +246,13 @@ List<GimmeOpportunity> buildOpportunities(
 }) {
   final asOf = _dateOnly(now ?? DateTime.now());
   final cityProfile = cityProfileFor(profile.city);
-  final familyRange = _familySupportRange(profile, cityProfile);
+  final familyRange = childAllowanceAnnualRange(profile);
   final homeLoanRange = profile.hasHomeLoan
       ? const AmountRange(low: 75000, high: 260000)
       : const AmountRange(low: 0, high: 35000);
   final medicalRange = medicalRefundEstimateRange(profile.medicalCost);
   final subscriptionRange = subscriptionSavingRange(profile);
+  final monthlyGuardRange = monthlyContinuityRange(profile, subscriptionRange);
   final movingRange = profile.recentMove
       ? cityProfile?.moveSupport ?? const AmountRange(low: 6000, high: 30000)
       : const AmountRange(low: 0, high: 9000);
@@ -247,38 +260,33 @@ List<GimmeOpportunity> buildOpportunities(
   final opportunities = <GimmeOpportunity>[
     GimmeOpportunity(
       id: 'family_support',
-      title: cityProfile == null
-          ? '子育て世帯サポート確認'
-          : '${cityProfile.cityName} 子育て支援差額',
+      title: '児童手当・第3子判定チェック',
       category: '子育て',
-      summary: cityProfile == null
-          ? '全国共通の児童関連支援と学校準備費の取りこぼし候補です。'
-          : '${cityProfile.sourceLabel}から、世帯条件に合う候補を優先表示しています。',
+      summary: '18〜22歳の生計負担ありの上の子も数え、第3子以降の児童手当増額を見落とさないように確認します。',
       amountRange: familyRange,
       period: OpportunityPeriod.yearly,
       deadline: nextAnnualDeadline(asOf, 9, 30),
       asOf: asOf,
       confidence: confidenceFromInputs(
-        base: cityProfile == null ? 52 : 72,
+        base: 72,
         signals: [
           profile.children > 0,
-          cityProfile != null,
+          profile.supportedOlderChildren > 0,
           profile.city.trim().isNotEmpty,
         ],
       ),
       reason: profile.children > 0
-          ? '子ども${profile.children}人、居住地「${profile.city}」の条件で照合しています。'
+          ? '高校生年代までの子ども${profile.children}人、18〜22歳の生計負担あり${profile.supportedOlderChildren}人として、第3子以降の判定を入れています。'
           : '子ども情報が未登録のため、子育て支援は確認候補として扱います。',
-      estimateBasis: cityProfile == null
-          ? '居住地が地域テーブルに未登録のため、全国共通の児童関連支援と学校準備費を低めのレンジで表示しています。地域を登録済みエリアに変更すると自治体候補が反映されます。'
-          : '${cityProfile.sourceLabel}をもとに、子どもの人数、学校準備費、年度内締切を反映した年次レンジです。所得条件と学年で対象可否が変わります。',
-      sourceLabel: cityProfile?.sourceLabel ?? '全国共通制度',
-      documents: const ['本人確認', '世帯情報', '振込口座', '学校/保育関連書類'],
+      estimateBasis:
+          'こども家庭庁の児童手当ルールを基準に、高校生年代までの支給対象児童を年額化しています。第3子以降の判定では、18歳到達後最初の3月31日後から22歳到達後最初の3月31日までの子で、監護相当・生計費負担がある場合も数えます。3歳未満かどうかは未入力のため、第1子・第2子は月1万円〜1万5千円のレンジで表示します。',
+      sourceLabel: childAllowanceSourceLabel,
+      documents: const ['本人確認', '世帯情報', '振込口座', '監護相当・生計費負担の確認書'],
       steps: const [
-        QuestStep('世帯情報を確認', '子どもの年齢、学年、居住地が条件に合うか確認します。'),
-        QuestStep('対象制度を選ぶ', '自治体ページで今年度の名称、所得条件、受付期限を確認します。'),
-        QuestStep('必要書類をそろえる', '口座情報と世帯確認書類を準備します。'),
-        QuestStep('申請前チェック', '入力漏れ、添付漏れ、提出期限を見直します。'),
+        QuestStep('子どもの数え方を確認', '高校生年代までの子と、18〜22歳で生計費を負担している上の子を分けて確認します。'),
+        QuestStep('第3子以降の該当を確認', '上の子を含めた出生順で、月3万円の対象になる子がいるか見ます。'),
+        QuestStep('確認書を準備', '該当する場合は監護相当・生計費負担の確認書を用意します。'),
+        QuestStep('自治体へ提出', '居住地の自治体手続きページで提出期限と添付書類を確認します。'),
       ],
     ),
     GimmeOpportunity(
@@ -310,6 +318,37 @@ List<GimmeOpportunity> buildOpportunities(
         QuestStep('未使用候補を確認', '最後に使った月、家族利用、仕事利用の有無を確認します。'),
         QuestStep('解約リンクを確認', '各サービスの解約ページを開ける状態にします。'),
         QuestStep('更新日前に止める', '次回課金日が近いものから順に処理します。'),
+      ],
+    ),
+    GimmeOpportunity(
+      id: 'monthly_guard',
+      title: 'Plus 毎月の取りこぼし監視',
+      category: 'Plus',
+      summary: '明細スキャン、期限通知、家族共有レポートを毎月回して、翌月以降の固定費漏れを拾い続けます。',
+      amountRange: monthlyGuardRange,
+      period: OpportunityPeriod.monthly,
+      deadline: nextMonthlyDeadline(asOf, 5),
+      asOf: asOf,
+      confidence: confidenceFromInputs(
+        base: 58,
+        signals: [
+          profile.monthlySubscriptions > 0,
+          profile.subscriptionCount >= 3,
+          profile.unusedSubscriptionCount > 0,
+          profile.children > 0 || profile.hasHomeLoan || profile.hasCaregiving,
+        ],
+      ),
+      reason: '固定費、申請期限、家族イベントを毎月の点検対象にして、単発回収で終わらない継続価値にします。',
+      estimateBasis:
+          'サブスク削減見込みの一部と、期限通知による申請漏れ防止を月次価値として控えめにレンジ化しています。Plusでは候補追加、通知、証跡保存、家族共有を有料境界にします。',
+      sourceLabel: 'Gimme Plus 継続監視',
+      plusOnly: true,
+      documents: const ['カード明細', 'アプリ購読履歴', '申請期限メモ', '家族共有メモ'],
+      steps: const [
+        QuestStep('月初スキャン', '明細と購読履歴を取り込み、新規課金と値上げを確認します。'),
+        QuestStep('締切通知', '今月中に動くべき申請、解約、更新を通知に並べます。'),
+        QuestStep('家族レポート', '誰が何を使っているかを一枚で確認できる状態にします。'),
+        QuestStep('成果を記録', '実際に止めた額と申請した額を回収実績へ保存します。'),
       ],
     ),
     GimmeOpportunity(
@@ -359,8 +398,8 @@ List<GimmeOpportunity> buildOpportunities(
       reason:
           '年間医療費 ${formatYen(profile.medicalCost)} をもとに、戻る可能性のある税額を概算しています。',
       estimateBasis:
-          '医療費控除は支払った医療費がそのまま戻る制度ではありません。対象医療費から基準額を引いた控除額に、所得税率・住民税影響をかけた還付/軽減見込みを年次レンジで表示しています。',
-      sourceLabel: '国税/確定申告',
+          '医療費控除は支払った医療費がそのまま戻る制度ではありません。支払医療費から保険金などの補填額と10万円、または総所得200万円未満なら総所得の5%を差し引いた控除額に、所得税率と住民税軽減の目安をかけた年次レンジです。',
+      sourceLabel: medicalDeductionSourceLabel,
       documents: const ['医療費明細', '交通費メモ', '薬局レシート', '源泉徴収票'],
       steps: const [
         QuestStep('医療費を分類', '病院、薬局、交通費を分けて集計します。'),
@@ -446,26 +485,23 @@ CityBenefitProfile? cityProfileFor(String city) {
   return null;
 }
 
-AmountRange _familySupportRange(
-  HouseholdProfile profile,
-  CityBenefitProfile? cityProfile,
-) {
+AmountRange childAllowanceAnnualRange(HouseholdProfile profile) {
   if (profile.children <= 0) {
-    return const AmountRange(low: 0, high: 12000);
+    return const AmountRange(low: 0, high: 0);
   }
-  final nationalLow = 18000 * profile.children;
-  final nationalHigh = 42000 * profile.children;
-  if (cityProfile == null) {
-    return AmountRange(low: nationalLow, high: nationalHigh);
+  var low = 0;
+  var high = 0;
+  for (var index = 1; index <= profile.children; index++) {
+    final birthOrder = profile.supportedOlderChildren + index;
+    if (birthOrder >= 3) {
+      low += 30000 * 12;
+      high += 30000 * 12;
+    } else {
+      low += 10000 * 12;
+      high += 15000 * 12;
+    }
   }
-  return AmountRange(
-    low:
-        nationalLow + cityProfile.childSupport.low + cityProfile.schoolPrep.low,
-    high:
-        nationalHigh +
-        cityProfile.childSupport.high +
-        cityProfile.schoolPrep.high,
-  );
+  return AmountRange(low: low, high: high);
 }
 
 AmountRange subscriptionSavingRange(HouseholdProfile profile) {
@@ -489,14 +525,55 @@ AmountRange subscriptionSavingRange(HouseholdProfile profile) {
   );
 }
 
-AmountRange medicalRefundEstimateRange(int medicalCost) {
-  if (medicalCost <= 100000) {
-    return const AmountRange(low: 0, high: 9000);
-  }
-  final taxableDeduction = medicalCost - 100000;
+AmountRange monthlyContinuityRange(
+  HouseholdProfile profile,
+  AmountRange subscriptionRange,
+) {
+  final subscriptionFloor = (subscriptionRange.low * 0.25).round();
+  final subscriptionCeiling = (subscriptionRange.high * 0.55).round();
+  final eventBoost =
+      (profile.children > 0 ? 1200 : 0) +
+      (profile.hasHomeLoan ? 900 : 0) +
+      (profile.hasCaregiving ? 900 : 0) +
+      (profile.recentMove ? 700 : 0);
+  final low = subscriptionFloor + (eventBoost * 0.6).round();
+  final high = subscriptionCeiling + eventBoost + 1800;
   return AmountRange(
-    low: (taxableDeduction * 0.05).round(),
-    high: (taxableDeduction * 0.20).round(),
+    low: low.clamp(0, 50000).toInt(),
+    high: high.clamp(0, 80000).toInt(),
+  );
+}
+
+int medicalDeductionAmount(
+  int medicalCost, {
+  int insuranceReimbursement = 0,
+  int? totalIncome,
+}) {
+  final netMedicalCost = (medicalCost - insuranceReimbursement)
+      .clamp(0, 1 << 31)
+      .toInt();
+  final floor = totalIncome != null && totalIncome < 2000000
+      ? (totalIncome * 0.05).round()
+      : 100000;
+  return (netMedicalCost - floor).clamp(0, 2000000).toInt();
+}
+
+AmountRange medicalRefundEstimateRange(
+  int medicalCost, {
+  int insuranceReimbursement = 0,
+  int? totalIncome,
+}) {
+  final taxableDeduction = medicalDeductionAmount(
+    medicalCost,
+    insuranceReimbursement: insuranceReimbursement,
+    totalIncome: totalIncome,
+  );
+  if (taxableDeduction <= 0) {
+    return const AmountRange(low: 0, high: 0);
+  }
+  return AmountRange(
+    low: (taxableDeduction * 0.15).round(),
+    high: (taxableDeduction * 0.33).round(),
   );
 }
 
@@ -643,16 +720,24 @@ String formatDeadline(DateTime deadline) {
   return '${deadline.year}/${deadline.month.toString().padLeft(2, '0')}/${deadline.day.toString().padLeft(2, '0')}';
 }
 
+enum SubscriptionBillingPeriod { monthly, yearly, weekly, quarterly, unknown }
+
 class SubscriptionScanItem {
   const SubscriptionScanItem({
     required this.name,
     required this.amount,
+    required this.rawAmount,
+    required this.periodLabel,
+    required this.confidence,
     required this.reason,
     required this.likelyUnused,
   });
 
   final String name;
   final int amount;
+  final int rawAmount;
+  final String periodLabel;
+  final int confidence;
   final String reason;
   final bool likelyUnused;
 }
@@ -679,31 +764,48 @@ SubscriptionScanResult analyzeSubscriptionStatement(String text) {
       .toList();
   final items = <SubscriptionScanItem>[];
   final amountPattern = RegExp(
-    r'(?:¥|￥)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,6})\s*(?:円|JPY)?',
-  );
-  final knownWords = RegExp(
-    r'(netflix|spotify|youtube|icloud|dropbox|notion|canva|adobe|amazon|prime|chatgpt|claude|gemini|grok|apple|google|microsoft|slack|zoom|storage|サブスク|年払い|月額|定期|購読|subscription)',
-    caseSensitive: false,
+    r'(?:¥|￥)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7})\s*(?:円|JPY)?',
   );
   for (final line in lines) {
     final amountMatch = amountPattern.firstMatch(line);
-    if (amountMatch == null || !knownWords.hasMatch(line)) {
+    if (amountMatch == null) {
       continue;
     }
-    final amount = int.tryParse(amountMatch.group(1)!.replaceAll(',', '')) ?? 0;
-    if (amount <= 0) {
+    final rawAmount =
+        int.tryParse(amountMatch.group(1)!.replaceAll(',', '')) ?? 0;
+    if (rawAmount <= 0 || rawAmount > 600000) {
       continue;
     }
     final name = _extractSubscriptionName(line);
+    if (name.length < 2 || _looksLikeNonSubscription(line)) {
+      continue;
+    }
+    final period = _detectSubscriptionBillingPeriod(line);
+    final knownMerchant = _looksLikeKnownSubscription(line);
+    final amount = _monthlyEquivalent(rawAmount, period, knownMerchant);
+    if (amount <= 0) {
+      continue;
+    }
     final likelyUnused = RegExp(
       r'(未使用|使ってない|解約|年払い|trial|トライアル|storage|old|放置)',
       caseSensitive: false,
     ).hasMatch(line);
+    final confidence =
+        (knownMerchant ? 72 : 54) +
+        (period == SubscriptionBillingPeriod.unknown ? 0 : 12) +
+        (likelyUnused ? 8 : 0);
     items.add(
       SubscriptionScanItem(
         name: name,
         amount: amount,
-        reason: likelyUnused ? '未使用・年払い・放置の可能性あり' : '定期課金候補',
+        rawAmount: rawAmount,
+        periodLabel: _periodLabel(period),
+        confidence: confidence.clamp(30, 96).toInt(),
+        reason: likelyUnused
+            ? '未使用・年払い・放置の可能性あり。月換算で確認してください。'
+            : period == SubscriptionBillingPeriod.unknown
+            ? '周期未確定の定期課金候補。前後月で継続性を確認してください。'
+            : '${_periodLabel(period)}の定期課金候補',
         likelyUnused: likelyUnused,
       ),
     );
@@ -723,7 +825,7 @@ String _extractSubscriptionName(String line) {
         RegExp(r'(?:¥|￥)?\s*[0-9]{1,3}(?:,[0-9]{3})+\s*(?:円|JPY)?'),
         '',
       )
-      .replaceAll(RegExp(r'(?:¥|￥)?\s*[0-9]{3,6}\s*(?:円|JPY)?'), '')
+      .replaceAll(RegExp(r'(?:¥|￥)?\s*[0-9]{3,7}\s*(?:円|JPY)?'), '')
       .replaceAll(RegExp(r'[-_/|:：]+'), ' ')
       .trim();
   if (cleaned.isEmpty) {
@@ -731,4 +833,77 @@ String _extractSubscriptionName(String line) {
   }
   final parts = cleaned.split(RegExp(r'\s+'));
   return parts.take(3).join(' ');
+}
+
+bool _looksLikeKnownSubscription(String line) {
+  return RegExp(
+    r'(netflix|spotify|youtube|icloud|dropbox|notion|canva|adobe|amazon|prime|chatgpt|claude|gemini|grok|apple|google|microsoft|slack|zoom|storage|subscription|サブスク|定期|購読|月額|年額|年払い)',
+    caseSensitive: false,
+  ).hasMatch(line);
+}
+
+bool _looksLikeNonSubscription(String line) {
+  return RegExp(
+    r'(スーパー|コンビニ|ガソリン|交通系|suica|pasmo|icoca|食料品|レストラン|現金|振込|給与|返金)',
+    caseSensitive: false,
+  ).hasMatch(line);
+}
+
+SubscriptionBillingPeriod _detectSubscriptionBillingPeriod(String line) {
+  if (RegExp(
+    r'(年額|年払い|年間|annual|annually|yearly)',
+    caseSensitive: false,
+  ).hasMatch(line)) {
+    return SubscriptionBillingPeriod.yearly;
+  }
+  if (RegExp(r'(週額|weekly|week)', caseSensitive: false).hasMatch(line)) {
+    return SubscriptionBillingPeriod.weekly;
+  }
+  if (RegExp(
+    r'(四半期|3か月|3ヶ月|quarter|quarterly)',
+    caseSensitive: false,
+  ).hasMatch(line)) {
+    return SubscriptionBillingPeriod.quarterly;
+  }
+  if (RegExp(
+    r'(月額|月払い|毎月|monthly|month)',
+    caseSensitive: false,
+  ).hasMatch(line)) {
+    return SubscriptionBillingPeriod.monthly;
+  }
+  return SubscriptionBillingPeriod.unknown;
+}
+
+int _monthlyEquivalent(
+  int rawAmount,
+  SubscriptionBillingPeriod period,
+  bool knownMerchant,
+) {
+  switch (period) {
+    case SubscriptionBillingPeriod.yearly:
+      return (rawAmount / 12).round();
+    case SubscriptionBillingPeriod.weekly:
+      return (rawAmount * 52 / 12).round();
+    case SubscriptionBillingPeriod.quarterly:
+      return (rawAmount / 3).round();
+    case SubscriptionBillingPeriod.monthly:
+      return rawAmount;
+    case SubscriptionBillingPeriod.unknown:
+      return knownMerchant || rawAmount <= 50000 ? rawAmount : 0;
+  }
+}
+
+String _periodLabel(SubscriptionBillingPeriod period) {
+  switch (period) {
+    case SubscriptionBillingPeriod.monthly:
+      return '月額';
+    case SubscriptionBillingPeriod.yearly:
+      return '年額を月換算';
+    case SubscriptionBillingPeriod.weekly:
+      return '週額を月換算';
+    case SubscriptionBillingPeriod.quarterly:
+      return '四半期を月換算';
+    case SubscriptionBillingPeriod.unknown:
+      return '周期未確定';
+  }
 }

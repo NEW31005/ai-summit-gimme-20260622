@@ -36,24 +36,34 @@ void main() {
     },
   );
 
-  test('city profile changes family support range and source label', () {
-    final tokyo = buildOpportunities(
-      HouseholdProfile.demo.copyWith(city: '東京都杉並区'),
+  test('child allowance counts supported 18-22 older children', () {
+    final noOlder = buildOpportunities(
+      HouseholdProfile.demo.copyWith(
+        city: '東京都杉並区',
+        children: 2,
+        supportedOlderChildren: 0,
+      ),
       now: fixedNow,
     ).firstWhere((item) => item.id == 'family_support');
-    final osaka = buildOpportunities(
-      HouseholdProfile.demo.copyWith(city: '大阪府大阪市'),
+    final withOlder = buildOpportunities(
+      HouseholdProfile.demo.copyWith(
+        city: '大阪府大阪市',
+        children: 2,
+        supportedOlderChildren: 1,
+      ),
       now: fixedNow,
     ).firstWhere((item) => item.id == 'family_support');
-    final unknown = buildOpportunities(
-      HouseholdProfile.demo.copyWith(city: '未対応市'),
+    final noChildren = buildOpportunities(
+      HouseholdProfile.demo.copyWith(children: 0, supportedOlderChildren: 2),
       now: fixedNow,
     ).firstWhere((item) => item.id == 'family_support');
 
-    expect(tokyo.sourceLabel, contains('杉並区'));
-    expect(osaka.sourceLabel, contains('大阪市'));
-    expect(tokyo.amountRange.high, greaterThan(osaka.amountRange.high));
-    expect(unknown.sourceLabel, '全国共通制度');
+    expect(noOlder.sourceLabel, childAllowanceSourceLabel);
+    expect(noOlder.amountRange.low, 240000);
+    expect(noOlder.amountRange.high, 360000);
+    expect(withOlder.amountRange.low, 480000);
+    expect(withOlder.amountRange.high, 540000);
+    expect(noChildren.amountRange.high, 0);
   });
 
   test('free plan gates lower priority candidates and Plus unlocks all', () {
@@ -128,8 +138,13 @@ ChatGPT Plus 3,000円
 ''');
 
     expect(result.items, hasLength(4));
-    expect(result.monthlyTotal, 12660);
+    expect(result.monthlyTotal, 6720);
     expect(result.likelyUnusedCount, 2);
+    expect(result.items.first.periodLabel, '月額');
+    expect(
+      result.items.firstWhere((item) => item.name.contains('Adobe')).amount,
+      540,
+    );
 
     final range = subscriptionSavingRange(
       HouseholdProfile.demo.copyWith(
@@ -141,6 +156,19 @@ ChatGPT Plus 3,000円
     );
     expect(range.high, greaterThan(0));
   });
+
+  test(
+    'medical deduction separates deduction amount from tax relief estimate',
+    () {
+      expect(medicalDeductionAmount(98000), 0);
+      expect(medicalDeductionAmount(186000), 86000);
+      expect(
+        medicalRefundEstimateRange(186000),
+        const TypeMatcher<AmountRange>(),
+      );
+      expect(medicalRefundEstimateRange(186000).low, 12900);
+    },
+  );
 
   test('yen formatters are stable', () {
     expect(formatYen(1234567), '1,234,567円');

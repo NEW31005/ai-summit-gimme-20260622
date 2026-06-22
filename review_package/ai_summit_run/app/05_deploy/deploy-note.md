@@ -44,3 +44,19 @@ Verification before push:
 - `flutter build web --base-href /ai-summit-gimme-20260622/`: pass
 - `flutter build apk --debug`: pass
 - Chrome DevTools mobile visual check: pass at 390 x 844 with no horizontal overflow
+
+## 2026-06-23 80-Plus Remediation Republish
+
+Claude's 80-plus redesign review was applied to the Flutter implementation and republished as `1.2.0+4`.
+
+- child allowance logic now includes supported 18-22 older children in third-child classification
+- medical deduction estimate separates deduction amount and tax relief estimate
+- AI statement scan now detects billing period, normalizes to monthly amounts, and shows confidence/reason
+- Free plan now exposes two candidates; Plus adds monthly guard value
+
+Verification before push:
+
+- `dart format lib test`: pass
+- `flutter analyze`: pass
+- `flutter test`: pass, 10 tests
+- `flutter build web --release --base-href /ai-summit-gimme-20260622/`: pass
