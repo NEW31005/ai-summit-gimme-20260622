@@ -171,3 +171,27 @@ Known notes:
 - This is still a Web preview plus native-ready Flutter code. Web preview intentionally uses no real purchase.
 - Store-console work remains required for formal release: create `gimme_plus_monthly`, run sandbox/internal purchase tests, and release-sign native builds.
 - For production-grade subscription verification, the same expiry fields should be backed by App Store / Google Play receipt validation or a managed entitlement provider. Build 7 prevents indefinite local unlock even before that final store backend pass.
+
+## 2026-06-23 Claude Build 7 Rereview Result
+
+Saved review:
+- `C:\Users\Rig5070\Documents\AI_Summits\ai-summit\runs\2026-06-25_frame2-genre-002\app\04_reports\claude-rereview-build7-20260623.md`
+
+Claude/Chloe judgment:
+- Final judgment: `ship candidate`, limited to closed/internal test track.
+- Build 6's app-side subscription blocker was judged fixed: Store Plus no longer remains permanently unlocked after one purchase/restore.
+- The 32-day bounded entitlement, 5-day restore refresh, expired entitlement lock, legacy unverified lock, purchase-state messages, and cancellation guidance were judged credible for pre-store release.
+- Scores:
+  - Overall: 79
+  - Improvement: 84
+  - Hit potential: 72
+  - Monetization: 79
+  - UI/UX: 82
+  - Technical: 85
+  - Legal/safety: 80
+  - Native readiness: 75
+
+Remaining before public paid GA:
+- Add authoritative server-side receipt validation or managed entitlement provider.
+- Create store products, produce signed release builds, and verify purchase -> restore -> expiry -> resync on real test devices.
+- Add one stronger retention/differentiation lever, ideally automatic monthly difference detection.
