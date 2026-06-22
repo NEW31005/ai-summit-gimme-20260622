@@ -41,6 +41,7 @@ void main() {
       HouseholdProfile.demo.copyWith(
         city: '東京都杉並区',
         children: 2,
+        underThreeChildren: 0,
         supportedOlderChildren: 0,
       ),
       now: fixedNow,
@@ -49,6 +50,7 @@ void main() {
       HouseholdProfile.demo.copyWith(
         city: '大阪府大阪市',
         children: 2,
+        underThreeChildren: 0,
         supportedOlderChildren: 1,
       ),
       now: fixedNow,
@@ -60,11 +62,27 @@ void main() {
 
     expect(noOlder.sourceLabel, childAllowanceSourceLabel);
     expect(noOlder.amountRange.low, 240000);
-    expect(noOlder.amountRange.high, 360000);
+    expect(noOlder.amountRange.high, 240000);
     expect(withOlder.amountRange.low, 480000);
-    expect(withOlder.amountRange.high, 540000);
+    expect(withOlder.amountRange.high, 480000);
     expect(noChildren.amountRange.high, 0);
   });
+
+  test(
+    'child allowance uses under-three count for first and second children',
+    () {
+      final range = childAllowanceAnnualRange(
+        HouseholdProfile.demo.copyWith(
+          children: 2,
+          underThreeChildren: 1,
+          supportedOlderChildren: 0,
+        ),
+      );
+
+      expect(range.low, 300000);
+      expect(range.high, 300000);
+    },
+  );
 
   test('free plan gates lower priority candidates and Plus unlocks all', () {
     final opportunities = buildOpportunities(
@@ -139,6 +157,8 @@ ChatGPT Plus 3,000円
 
     expect(result.items, hasLength(4));
     expect(result.monthlyTotal, 6720);
+    expect(result.includedMonthlyCount, 4);
+    expect(result.confirmationRequiredCount, 2);
     expect(result.likelyUnusedCount, 2);
     expect(result.items.first.periodLabel, '月額');
     expect(
@@ -158,6 +178,18 @@ ChatGPT Plus 3,000円
   });
 
   test(
+    'AI statement scan does not monthly-sum unknown annual-risk charges',
+    () {
+      final result = analyzeSubscriptionStatement('Amazon Prime 5,900円');
+
+      expect(result.items, hasLength(1));
+      expect(result.monthlyTotal, 0);
+      expect(result.confirmationRequiredCount, 1);
+      expect(result.items.single.includedInMonthlyTotal, isFalse);
+    },
+  );
+
+  test(
     'medical deduction separates deduction amount from tax relief estimate',
     () {
       expect(medicalDeductionAmount(98000), 0);
@@ -167,8 +199,54 @@ ChatGPT Plus 3,000円
         const TypeMatcher<AmountRange>(),
       );
       expect(medicalRefundEstimateRange(186000).low, 12900);
+      expect(
+        medicalDeductionAmount(
+          186000,
+          insuranceReimbursement: 50000,
+          totalIncome: 5200000,
+        ),
+        36000,
+      );
+      expect(
+        medicalRefundEstimateRange(
+          186000,
+          insuranceReimbursement: 50000,
+          totalIncome: 5200000,
+        ).low,
+        10800,
+      );
     },
   );
+
+  test('recent move does not add fabricated city-specific money', () {
+    final range = contractSettlementRange(
+      HouseholdProfile.demo.copyWith(
+        recentMove: true,
+        monthlySubscriptions: 0,
+        subscriptionCount: 0,
+      ),
+    );
+
+    expect(range.low, 0);
+    expect(range.high, 9000);
+    expect(cityProfileFor('東京都杉並区')?.sourceLabel, contains('公式制度確認対象'));
+  });
+
+  test('reminder plan includes deadline and monthly scan reminders', () {
+    final opportunities = buildOpportunities(
+      HouseholdProfile.demo,
+      now: fixedNow,
+    );
+    final reminders = buildReminderPlan(opportunities, now: fixedNow);
+
+    expect(reminders, isNotEmpty);
+    expect(reminders.any((item) => item.id.startsWith('deadline:')), isTrue);
+    expect(
+      reminders.any((item) => item.id.startsWith('monthly-scan:')),
+      isTrue,
+    );
+    expect(reminders.first.scheduledFor.isBefore(fixedNow), isFalse);
+  });
 
   test('yen formatters are stable', () {
     expect(formatYen(1234567), '1,234,567円');

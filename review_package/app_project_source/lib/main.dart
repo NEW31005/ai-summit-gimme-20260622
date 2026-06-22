@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'gimme_model.dart';
+import 'gimme_services.dart';
 
 void main() {
   runApp(const GimmeApp());
@@ -54,8 +58,12 @@ class _GimmeHomeState extends State<GimmeHome> {
   static const _cityKey = 'city';
   static const _adultsKey = 'adults';
   static const _childrenKey = 'children';
+  static const _underThreeChildrenKey = 'underThreeChildren';
   static const _supportedOlderChildrenKey = 'supportedOlderChildren';
   static const _medicalCostKey = 'medicalCost';
+  static const _medicalInsuranceReimbursementKey =
+      'medicalInsuranceReimbursement';
+  static const _totalIncomeKey = 'totalIncome';
   static const _subscriptionsKey = 'subscriptions';
   static const _subscriptionCountKey = 'subscriptionCount';
   static const _unusedSubscriptionCountKey = 'unusedSubscriptionCount';
@@ -64,7 +72,6 @@ class _GimmeHomeState extends State<GimmeHome> {
   static const _caregivingKey = 'caregiving';
   static const _recentMoveKey = 'recentMove';
   static const _completedKey = 'completedSteps';
-  static const _premiumKey = 'premiumUnlocked';
   static const _actualRecoveredEntriesKey = 'actualRecoveredEntries';
 
   HouseholdProfile _profile = HouseholdProfile.demo;
@@ -72,30 +79,57 @@ class _GimmeHomeState extends State<GimmeHome> {
   Map<String, int> _actualRecovered = <String, int>{};
   int _selectedIndex = 0;
   bool _loaded = false;
-  bool _premiumUnlocked = false;
+  EntitlementSnapshot _entitlement = const EntitlementSnapshot.free();
+  bool _remindersEnabled = false;
   SharedPreferences? _prefs;
+  final StoreEntitlementBridge _storeEntitlementBridge =
+      StoreEntitlementBridge();
+  final NativeReminderBridge _nativeReminderBridge = NativeReminderBridge();
+  StreamSubscription<dynamic>? _purchaseSubscription;
 
   List<GimmeOpportunity> get _opportunities => buildOpportunities(_profile);
+  bool get _premiumUnlocked => _entitlement.unlocked;
 
   @override
   void initState() {
     super.initState();
+    if (!kIsWeb) {
+      _purchaseSubscription = _storeEntitlementBridge.listenForPurchaseUpdates(
+        onEntitlement: _handleStoreEntitlement,
+      );
+    }
     _loadState();
+  }
+
+  @override
+  void dispose() {
+    _purchaseSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadState() async {
     final prefs = await SharedPreferences.getInstance();
+    final entitlement = await PreviewEntitlementRepository(prefs).load();
+    final remindersEnabled = ReminderSettingsRepository(prefs).loadEnabled();
     setState(() {
       _prefs = prefs;
       _profile = HouseholdProfile(
         city: prefs.getString(_cityKey) ?? HouseholdProfile.demo.city,
         adults: prefs.getInt(_adultsKey) ?? HouseholdProfile.demo.adults,
         children: prefs.getInt(_childrenKey) ?? HouseholdProfile.demo.children,
+        underThreeChildren:
+            prefs.getInt(_underThreeChildrenKey) ??
+            HouseholdProfile.demo.underThreeChildren,
         supportedOlderChildren:
             prefs.getInt(_supportedOlderChildrenKey) ??
             HouseholdProfile.demo.supportedOlderChildren,
         medicalCost:
             prefs.getInt(_medicalCostKey) ?? HouseholdProfile.demo.medicalCost,
+        medicalInsuranceReimbursement:
+            prefs.getInt(_medicalInsuranceReimbursementKey) ??
+            HouseholdProfile.demo.medicalInsuranceReimbursement,
+        totalIncome:
+            prefs.getInt(_totalIncomeKey) ?? HouseholdProfile.demo.totalIncome,
         monthlySubscriptions:
             prefs.getInt(_subscriptionsKey) ??
             HouseholdProfile.demo.monthlySubscriptions,
@@ -121,7 +155,8 @@ class _GimmeHomeState extends State<GimmeHome> {
       _actualRecovered = _decodeActualRecovered(
         prefs.getStringList(_actualRecoveredEntriesKey) ?? <String>[],
       );
-      _premiumUnlocked = prefs.getBool(_premiumKey) ?? false;
+      _entitlement = entitlement;
+      _remindersEnabled = remindersEnabled;
       _loaded = true;
     });
   }
@@ -135,11 +170,17 @@ class _GimmeHomeState extends State<GimmeHome> {
     await prefs.setString(_cityKey, profile.city);
     await prefs.setInt(_adultsKey, profile.adults);
     await prefs.setInt(_childrenKey, profile.children);
+    await prefs.setInt(_underThreeChildrenKey, profile.underThreeChildren);
     await prefs.setInt(
       _supportedOlderChildrenKey,
       profile.supportedOlderChildren,
     );
     await prefs.setInt(_medicalCostKey, profile.medicalCost);
+    await prefs.setInt(
+      _medicalInsuranceReimbursementKey,
+      profile.medicalInsuranceReimbursement,
+    );
+    await prefs.setInt(_totalIncomeKey, profile.totalIncome);
     await prefs.setInt(_subscriptionsKey, profile.monthlySubscriptions);
     await prefs.setInt(_subscriptionCountKey, profile.subscriptionCount);
     await prefs.setInt(
@@ -187,14 +228,69 @@ class _GimmeHomeState extends State<GimmeHome> {
     );
   }
 
-  Future<void> _setPremiumUnlocked(bool value) async {
-    setState(() => _premiumUnlocked = value);
-    await _prefs?.setBool(_premiumKey, value);
+  Future<void> _setPreviewEntitlement(bool value) async {
+    if (!kIsWeb && value) {
+      final started = await _storeEntitlementBridge.startPlusPurchase();
+      if (!started) {
+        return;
+      }
+      return;
+    }
+    final prefs = _prefs;
+    if (prefs == null) {
+      setState(
+        () => _entitlement = value
+            ? const EntitlementSnapshot(
+                unlocked: true,
+                source: EntitlementSource.webPreview,
+                detail: 'Web確認版のプレビュー権限',
+              )
+            : const EntitlementSnapshot.free(),
+      );
+      return;
+    }
+    final next = await PreviewEntitlementRepository(
+      prefs,
+    ).setPreviewUnlocked(value);
+    setState(() => _entitlement = next);
+  }
+
+  Future<void> _handleStoreEntitlement(EntitlementSnapshot entitlement) async {
+    final prefs = _prefs;
+    if (!mounted) {
+      return;
+    }
+    setState(() => _entitlement = entitlement);
+    if (prefs != null) {
+      await PreviewEntitlementRepository(prefs).saveStoreEntitlement();
+    }
+  }
+
+  Future<void> _restorePurchases() async {
+    await _storeEntitlementBridge.restorePurchases();
+  }
+
+  Future<void> _setRemindersEnabled(bool value) async {
+    final prefs = _prefs;
+    setState(() => _remindersEnabled = value);
+    if (prefs != null) {
+      await ReminderSettingsRepository(prefs).setEnabled(value);
+    }
+    if (!kIsWeb) {
+      if (value) {
+        await _nativeReminderBridge.scheduleReminders(
+          buildReminderPlan(_opportunities),
+        );
+      } else {
+        await _nativeReminderBridge.cancelReminders();
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final opportunities = _opportunities;
+    final reminderPlan = buildReminderPlan(opportunities);
     final pages = <Widget>[
       _DashboardPage(
         profile: _profile,
@@ -220,10 +316,13 @@ class _GimmeHomeState extends State<GimmeHome> {
       ),
       _InsightsPage(
         opportunities: opportunities,
+        reminderPlan: reminderPlan,
         completedSteps: _completedSteps,
         actualRecovered: _actualRecovered,
         premiumUnlocked: _premiumUnlocked,
+        remindersEnabled: _remindersEnabled,
         onPlanTap: _openPaywall,
+        onRemindersChanged: _setRemindersEnabled,
       ),
     ];
 
@@ -321,11 +420,16 @@ class _GimmeHomeState extends State<GimmeHome> {
   }
 
   void _openPaywall() {
+    final reminderPlan = buildReminderPlan(_opportunities);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PaywallPage(
-          unlocked: _premiumUnlocked,
-          onUnlockChanged: _setPremiumUnlocked,
+          entitlement: _entitlement,
+          remindersEnabled: _remindersEnabled,
+          reminderPlan: reminderPlan,
+          onUnlockChanged: _setPreviewEntitlement,
+          onRestorePurchases: _restorePurchases,
+          onRemindersChanged: _setRemindersEnabled,
         ),
       ),
     );
@@ -696,7 +800,7 @@ class _HouseholdStrip extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${cityMatched ? '地域制度反映中' : '全国共通のみ'}  |  サブスク${profile.subscriptionCount}本 / 未使用候補${profile.unusedSubscriptionCount}本',
+                    '${cityMatched ? '地域公式ページ確認対象' : '全国共通のみ'}  |  サブスク${profile.subscriptionCount}本 / 未使用候補${profile.unusedSubscriptionCount}本',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -910,7 +1014,7 @@ class _LockedCandidatesCard extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
-            Text('$count件の候補、制度名、手順、書類リスト、期限通知はPlusで解放されます。'),
+            Text('$count件の候補、制度名、手順、書類リスト、通知予定はPlusで解放されます。'),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: onPlanTap,
@@ -1160,7 +1264,7 @@ class _LockedDetailCard extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
-            const Text('制度名、必要書類、申請手順、推定根拠、期限通知、実回収額の記録を解放します。'),
+            const Text('制度名、必要書類、申請手順、推定根拠、通知予定、実回収額の記録を解放します。'),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onPlanTap,
@@ -1345,7 +1449,7 @@ class _AiScanPageState extends State<AiScanPage> {
                     widget.onProfileChanged(
                       widget.profile.copyWith(
                         monthlySubscriptions: result.monthlyTotal,
-                        subscriptionCount: result.items.length,
+                        subscriptionCount: result.includedMonthlyCount,
                         unusedSubscriptionCount: result.likelyUnusedCount,
                         unusedSubscriptionMonths: result.likelyUnusedCount > 0
                             ? 4
@@ -1381,17 +1485,25 @@ class _ScanResultCard extends StatelessWidget {
             const Text('抽出結果', style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             _PlanRow(label: '月額合計', value: formatYen(result.monthlyTotal)),
-            _PlanRow(label: '定期課金候補', value: '${result.items.length}件'),
+            _PlanRow(label: '月額に反映', value: '${result.includedMonthlyCount}件'),
+            _PlanRow(
+              label: '周期確認待ち',
+              value: '${result.confirmationRequiredCount}件',
+            ),
             _PlanRow(label: '未使用候補', value: '${result.likelyUnusedCount}件'),
             const SizedBox(height: 8),
             ...result.items.map(
               (item) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(
-                  item.likelyUnused
+                  item.requiresConfirmation
+                      ? Icons.help_outline
+                      : item.likelyUnused
                       ? Icons.warning_amber_outlined
                       : Icons.receipt_long_outlined,
-                  color: item.likelyUnused
+                  color: item.requiresConfirmation
+                      ? const Color(0xFF7C3AED)
+                      : item.likelyUnused
                       ? const Color(0xFFC2410C)
                       : const Color(0xFF0F766E),
                 ),
@@ -1403,7 +1515,7 @@ class _ScanResultCard extends StatelessWidget {
                   '${item.periodLabel} / 元金額 ${formatYen(item.rawAmount)} / 確信度 ${item.confidence}%\n${item.reason}',
                 ),
                 trailing: Text(
-                  formatYen(item.amount),
+                  item.includedInMonthlyTotal ? formatYen(item.amount) : '確認待ち',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
@@ -1471,7 +1583,7 @@ class _HouseholdPageState extends State<_HouseholdPage> {
         Text('世帯プロファイル', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 6),
         Text(
-          '保存した条件だけが候補計算に反映されます。地域名は対応エリアに一致すると自治体候補が変わります。',
+          '保存した条件だけが候補計算に反映されます。地域名は公式制度ページを探す手がかりで、未確認の自治体金額は加算しません。',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 14),
@@ -1503,8 +1615,26 @@ class _HouseholdPageState extends State<_HouseholdPage> {
                   value: _draft.children,
                   min: 0,
                   max: 5,
-                  onChanged: (value) =>
-                      setState(() => _draft = _draft.copyWith(children: value)),
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(
+                      children: value,
+                      underThreeChildren: _draft.underThreeChildren
+                          .clamp(0, value)
+                          .toInt(),
+                    ),
+                  ),
+                ),
+                _StepperRow(
+                  label: '3歳未満の子',
+                  value: _draft.underThreeChildren
+                      .clamp(0, _draft.children)
+                      .toInt(),
+                  min: 0,
+                  max: _draft.children,
+                  unit: '人',
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(underThreeChildren: value),
+                  ),
                 ),
                 _StepperRow(
                   label: '18〜22歳の生計負担あり',
@@ -1535,6 +1665,37 @@ class _HouseholdPageState extends State<_HouseholdPage> {
                   divisions: 42,
                   onChanged: (value) => setState(
                     () => _draft = _draft.copyWith(medicalCost: value),
+                  ),
+                ),
+                _AmountSlider(
+                  label: '保険金などの補填',
+                  value: _draft.medicalInsuranceReimbursement,
+                  min: 0,
+                  max: 420000,
+                  divisions: 42,
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(
+                      medicalInsuranceReimbursement: value,
+                    ),
+                  ),
+                ),
+                _AmountSlider(
+                  label: '総所得金額等',
+                  value: _draft.totalIncome,
+                  min: 0,
+                  max: 12000000,
+                  divisions: 120,
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(totalIncome: value),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '医療費控除は「医療費 - 保険金等 - 10万円等」に所得税率と住民税目安を掛けて表示します。',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                   ),
                 ),
                 _AmountSlider(
@@ -1735,17 +1896,23 @@ class _AmountSlider extends StatelessWidget {
 class _InsightsPage extends StatelessWidget {
   const _InsightsPage({
     required this.opportunities,
+    required this.reminderPlan,
     required this.completedSteps,
     required this.actualRecovered,
     required this.premiumUnlocked,
+    required this.remindersEnabled,
     required this.onPlanTap,
+    required this.onRemindersChanged,
   });
 
   final List<GimmeOpportunity> opportunities;
+  final List<GimmeReminder> reminderPlan;
   final Set<String> completedSteps;
   final Map<String, int> actualRecovered;
   final bool premiumUnlocked;
+  final bool remindersEnabled;
   final VoidCallback onPlanTap;
+  final Future<void> Function(bool value) onRemindersChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1793,6 +1960,14 @@ class _InsightsPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        _ReminderPlanCard(
+          reminderPlan: reminderPlan,
+          premiumUnlocked: premiumUnlocked,
+          remindersEnabled: remindersEnabled,
+          onPlanTap: onPlanTap,
+          onChanged: onRemindersChanged,
+        ),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1806,8 +1981,8 @@ class _InsightsPage extends StatelessWidget {
                 SizedBox(height: 10),
                 _NativeReadyItem(
                   icon: Icons.notifications_active_outlined,
-                  title: '期限通知',
-                  text: '実締切日に合わせて、申請漏れをプッシュ通知で防ぎます。',
+                  title: '通知予定',
+                  text: '実締切日から逆算した通知予定を保存し、正式モバイル版ではローカル通知へ接続します。',
                 ),
                 _NativeReadyItem(
                   icon: Icons.lock_open_outlined,
@@ -1829,18 +2004,100 @@ class _InsightsPage extends StatelessWidget {
   }
 }
 
-class PaywallPage extends StatelessWidget {
-  const PaywallPage({
-    super.key,
-    required this.unlocked,
-    required this.onUnlockChanged,
+class _ReminderPlanCard extends StatelessWidget {
+  const _ReminderPlanCard({
+    required this.reminderPlan,
+    required this.premiumUnlocked,
+    required this.remindersEnabled,
+    required this.onPlanTap,
+    required this.onChanged,
   });
 
-  final bool unlocked;
-  final Future<void> Function(bool value) onUnlockChanged;
+  final List<GimmeReminder> reminderPlan;
+  final bool premiumUnlocked;
+  final bool remindersEnabled;
+  final VoidCallback onPlanTap;
+  final Future<void> Function(bool value) onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = premiumUnlocked && remindersEnabled;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '通知予定',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Switch(
+                  value: enabled,
+                  onChanged: premiumUnlocked
+                      ? (value) async => onChanged(value)
+                      : (_) => onPlanTap(),
+                ),
+              ],
+            ),
+            Text(
+              premiumUnlocked
+                  ? enabled
+                        ? 'この端末に通知予定を保存しています。正式モバイル版ではOS通知に接続します。'
+                        : 'Plusで通知予定を使うにはスイッチを有効にしてください。'
+                  : 'Plusで締切前の通知予定を保存できます。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            ...reminderPlan
+                .take(4)
+                .map(
+                  (reminder) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_available_outlined),
+                    title: Text(
+                      reminder.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(reminder.reason),
+                    trailing: Text(
+                      formatDeadline(reminder.scheduledFor),
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PaywallPage extends StatelessWidget {
+  const PaywallPage({
+    super.key,
+    required this.entitlement,
+    required this.remindersEnabled,
+    required this.reminderPlan,
+    required this.onUnlockChanged,
+    required this.onRestorePurchases,
+    required this.onRemindersChanged,
+  });
+
+  final EntitlementSnapshot entitlement;
+  final bool remindersEnabled;
+  final List<GimmeReminder> reminderPlan;
+  final Future<void> Function(bool value) onUnlockChanged;
+  final Future<void> Function() onRestorePurchases;
+  final Future<void> Function(bool value) onRemindersChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final unlocked = entitlement.unlocked;
     return Scaffold(
       appBar: AppBar(title: const Text('Gimme Plus')),
       body: SafeArea(
@@ -1859,10 +2116,10 @@ class PaywallPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const _Tag(label: 'Native-ready subscription'),
+                      const _Tag(label: 'Android/iOS store-ready'),
                       const SizedBox(height: 14),
                       const Text(
-                        '隠れた取り損ねを毎月監視する',
+                        '取り損ねを毎月の習慣に戻す',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 26,
@@ -1872,7 +2129,7 @@ class PaywallPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '全候補、制度名、必要書類、期限通知、実回収記録、AI明細スキャンを解放します。',
+                        '全候補、制度名、必要書類、通知予定、実回収記録、AI明細スキャンを解放します。',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: const Color(0xFFD6E8E4),
                         ),
@@ -1922,13 +2179,35 @@ class PaywallPage extends StatelessWidget {
                         ),
                         const _PlanFeature(
                           icon: Icons.notification_important_outlined,
-                          title: '期限と制度更新の監視',
-                          text: '実締切日をもとに、期限前の候補を見逃さない状態にします。',
+                          title: '通知予定の保存',
+                          text: '実締切日から逆算した予定を保存し、正式モバイル版ではOS通知へ接続します。',
                         ),
                         const _PlanFeature(
                           icon: Icons.auto_awesome_outlined,
                           title: 'AI明細スキャン',
                           text: '明細テキストから定期課金を抽出し、サブスク回収額に反映します。',
+                        ),
+                        const SizedBox(height: 12),
+                        _PlanRow(label: '権限状態', value: entitlement.badgeLabel),
+                        _PlanRow(
+                          label: '通知予定',
+                          value: '${reminderPlan.length}件',
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: unlocked && remindersEnabled,
+                          onChanged: unlocked
+                              ? (value) async {
+                                  await onRemindersChanged(value);
+                                }
+                              : null,
+                          title: const Text(
+                            'Plus通知予定を有効化',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: const Text(
+                            'Web確認版では予定保存、正式版ではローカル通知へ接続します。',
+                          ),
                         ),
                         const SizedBox(height: 12),
                         FilledButton.icon(
@@ -1939,8 +2218,8 @@ class PaywallPage extends StatelessWidget {
                                 SnackBar(
                                   content: Text(
                                     !unlocked
-                                        ? '確認版でGimme Plusを有効にしました'
-                                        : '確認版でGimme Plusを無効にしました',
+                                        ? 'Web確認版のPlusプレビューを有効にしました'
+                                        : 'Web確認版のPlusプレビューを解除しました',
                                   ),
                                 ),
                               );
@@ -1952,12 +2231,26 @@ class PaywallPage extends StatelessWidget {
                                 : Icons.workspace_premium_outlined,
                           ),
                           label: Text(
-                            unlocked ? '確認版の有効状態を解除' : '確認版でPlusを有効化',
+                            unlocked
+                                ? 'Plusプレビューを解除'
+                                : kIsWeb
+                                ? 'Web確認版でPlusを試す'
+                                : 'ストアでPlusを開始',
                           ),
                         ),
+                        if (!kIsWeb) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: onRestorePurchases,
+                            icon: const Icon(Icons.restore_outlined),
+                            label: const Text('購入を復元'),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Text(
-                          'Web確認版では購入をシミュレートします。Android/iOS正式版ではGoogle Play Billing / StoreKitの商品IDに接続します。',
+                          kIsWeb
+                              ? '商品ID: $gimmePlusProductId。Web確認版では購入を発生させず、Android/iOS正式版ではアプリ内課金ブリッジからGoogle Play Billing / StoreKitへ接続します。'
+                              : '商品ID: $gimmePlusProductId。購入更新と復元が確認できた時だけStore Plusとして有効化します。',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: const Color(0xFF64748B)),
                         ),
@@ -2222,6 +2515,8 @@ Color _categoryColor(String category) {
       return const Color(0xFFB45309);
     case '生活':
       return const Color(0xFF0891B2);
+    case 'Plus':
+      return const Color(0xFF0F766E);
     default:
       return const Color(0xFF475569);
   }
@@ -2241,6 +2536,8 @@ IconData _categoryIcon(String category) {
       return Icons.elderly_outlined;
     case '生活':
       return Icons.move_down_outlined;
+    case 'Plus':
+      return Icons.workspace_premium_outlined;
     default:
       return Icons.receipt_long_outlined;
   }
