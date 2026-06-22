@@ -19,3 +19,10 @@
 - [x] Public HTTPS preview deployed
 - [x] QA report written
 - [x] App lineup ledger updated
+- [x] Claude rereview addressed at completion standard
+- [x] Real deadline calculation connected
+- [x] City-aware estimates connected
+- [x] Free/Plus candidate gating connected
+- [x] Prepared value and actual recovered value separated
+- [x] AI statement scan flow added
+- [x] Android/iOS metadata cleanup completed

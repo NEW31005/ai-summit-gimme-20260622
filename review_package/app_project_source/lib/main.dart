@@ -34,7 +34,7 @@ class GimmeApp extends StatelessWidget {
           backgroundColor: Colors.white,
           indicatorColor: const Color(0xFFE6F4F1),
           labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -56,14 +56,19 @@ class _GimmeHomeState extends State<GimmeHome> {
   static const _childrenKey = 'children';
   static const _medicalCostKey = 'medicalCost';
   static const _subscriptionsKey = 'subscriptions';
+  static const _subscriptionCountKey = 'subscriptionCount';
+  static const _unusedSubscriptionCountKey = 'unusedSubscriptionCount';
+  static const _unusedSubscriptionMonthsKey = 'unusedSubscriptionMonths';
   static const _homeLoanKey = 'homeLoan';
   static const _caregivingKey = 'caregiving';
   static const _recentMoveKey = 'recentMove';
   static const _completedKey = 'completedSteps';
   static const _premiumKey = 'premiumUnlocked';
+  static const _actualRecoveredEntriesKey = 'actualRecoveredEntries';
 
   HouseholdProfile _profile = HouseholdProfile.demo;
   Set<String> _completedSteps = <String>{};
+  Map<String, int> _actualRecovered = <String, int>{};
   int _selectedIndex = 0;
   bool _loaded = false;
   bool _premiumUnlocked = false;
@@ -90,6 +95,15 @@ class _GimmeHomeState extends State<GimmeHome> {
         monthlySubscriptions:
             prefs.getInt(_subscriptionsKey) ??
             HouseholdProfile.demo.monthlySubscriptions,
+        subscriptionCount:
+            prefs.getInt(_subscriptionCountKey) ??
+            HouseholdProfile.demo.subscriptionCount,
+        unusedSubscriptionCount:
+            prefs.getInt(_unusedSubscriptionCountKey) ??
+            HouseholdProfile.demo.unusedSubscriptionCount,
+        unusedSubscriptionMonths:
+            prefs.getInt(_unusedSubscriptionMonthsKey) ??
+            HouseholdProfile.demo.unusedSubscriptionMonths,
         hasHomeLoan:
             prefs.getBool(_homeLoanKey) ?? HouseholdProfile.demo.hasHomeLoan,
         hasCaregiving:
@@ -100,6 +114,9 @@ class _GimmeHomeState extends State<GimmeHome> {
       );
       _completedSteps = (prefs.getStringList(_completedKey) ?? <String>[])
           .toSet();
+      _actualRecovered = _decodeActualRecovered(
+        prefs.getStringList(_actualRecoveredEntriesKey) ?? <String>[],
+      );
       _premiumUnlocked = prefs.getBool(_premiumKey) ?? false;
       _loaded = true;
     });
@@ -116,6 +133,15 @@ class _GimmeHomeState extends State<GimmeHome> {
     await prefs.setInt(_childrenKey, profile.children);
     await prefs.setInt(_medicalCostKey, profile.medicalCost);
     await prefs.setInt(_subscriptionsKey, profile.monthlySubscriptions);
+    await prefs.setInt(_subscriptionCountKey, profile.subscriptionCount);
+    await prefs.setInt(
+      _unusedSubscriptionCountKey,
+      profile.unusedSubscriptionCount,
+    );
+    await prefs.setInt(
+      _unusedSubscriptionMonthsKey,
+      profile.unusedSubscriptionMonths,
+    );
     await prefs.setBool(_homeLoanKey, profile.hasHomeLoan);
     await prefs.setBool(_caregivingKey, profile.hasCaregiving);
     await prefs.setBool(_recentMoveKey, profile.recentMove);
@@ -136,6 +162,23 @@ class _GimmeHomeState extends State<GimmeHome> {
     );
   }
 
+  Future<void> _setActualRecovered(String opportunityId, int amount) async {
+    setState(() {
+      if (amount <= 0) {
+        _actualRecovered.remove(opportunityId);
+      } else {
+        _actualRecovered[opportunityId] = amount;
+      }
+    });
+    await _prefs?.setStringList(
+      _actualRecoveredEntriesKey,
+      _actualRecovered.entries
+          .map((entry) => '${entry.key}:${entry.value}')
+          .toList()
+        ..sort(),
+    );
+  }
+
   Future<void> _setPremiumUnlocked(bool value) async {
     setState(() => _premiumUnlocked = value);
     await _prefs?.setBool(_premiumKey, value);
@@ -143,27 +186,34 @@ class _GimmeHomeState extends State<GimmeHome> {
 
   @override
   Widget build(BuildContext context) {
+    final opportunities = _opportunities;
     final pages = <Widget>[
       _DashboardPage(
         profile: _profile,
-        opportunities: _opportunities,
+        opportunities: opportunities,
         completedSteps: _completedSteps,
+        actualRecovered: _actualRecovered,
+        premiumUnlocked: _premiumUnlocked,
         onOpen: _openQuest,
         onPlanTap: _openPaywall,
       ),
       _OpportunitiesPage(
-        opportunities: _opportunities,
+        opportunities: opportunities,
         completedSteps: _completedSteps,
+        premiumUnlocked: _premiumUnlocked,
         onOpen: _openQuest,
+        onPlanTap: _openPaywall,
       ),
+      AiScanPage(profile: _profile, onProfileChanged: _saveProfile),
       _HouseholdPage(
         profile: _profile,
         onChanged: _saveProfile,
         onPrivacyTap: _openPrivacy,
       ),
       _InsightsPage(
-        opportunities: _opportunities,
+        opportunities: opportunities,
         completedSteps: _completedSteps,
+        actualRecovered: _actualRecovered,
         premiumUnlocked: _premiumUnlocked,
         onPlanTap: _openPaywall,
       ),
@@ -174,13 +224,26 @@ class _GimmeHomeState extends State<GimmeHome> {
         titleSpacing: 18,
         title: const _BrandTitle(),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: FilledButton.tonalIcon(
-              onPressed: () => setState(() => _selectedIndex = 2),
-              icon: const Icon(Icons.group_outlined, size: 18),
-              label: Text('${_profile.adults + _profile.children}人世帯'),
-            ),
+          Builder(
+            builder: (context) {
+              final compact = MediaQuery.sizeOf(context).width < 420;
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: compact
+                    ? IconButton.filledTonal(
+                        onPressed: () => setState(() => _selectedIndex = 3),
+                        icon: const Icon(Icons.group_outlined, size: 19),
+                        tooltip: '${_profile.adults + _profile.children}人世帯',
+                      )
+                    : FilledButton.tonalIcon(
+                        onPressed: () => setState(() => _selectedIndex = 3),
+                        icon: const Icon(Icons.group_outlined, size: 18),
+                        label: Text(
+                          '${_profile.adults + _profile.children}人世帯',
+                        ),
+                      ),
+              );
+            },
           ),
         ],
       ),
@@ -213,6 +276,11 @@ class _GimmeHomeState extends State<GimmeHome> {
             label: '候補',
           ),
           NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'AI',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.family_restroom_outlined),
             selectedIcon: Icon(Icons.family_restroom),
             label: '世帯',
@@ -232,8 +300,12 @@ class _GimmeHomeState extends State<GimmeHome> {
       MaterialPageRoute<void>(
         builder: (_) => QuestDetailPage(
           opportunity: opportunity,
+          locked: !_premiumUnlocked,
           completedSteps: _completedSteps,
+          actualRecovered: _actualRecovered[opportunity.id] ?? 0,
           onStepChanged: _toggleStep,
+          onActualRecoveredChanged: _setActualRecovered,
+          onPlanTap: _openPaywall,
         ),
       ),
     );
@@ -255,6 +327,21 @@ class _GimmeHomeState extends State<GimmeHome> {
       context,
     ).push(MaterialPageRoute<void>(builder: (_) => const PrivacyPolicyPage()));
   }
+}
+
+Map<String, int> _decodeActualRecovered(List<String> entries) {
+  final result = <String, int>{};
+  for (final entry in entries) {
+    final separator = entry.lastIndexOf(':');
+    if (separator <= 0) {
+      continue;
+    }
+    final amount = int.tryParse(entry.substring(separator + 1));
+    if (amount != null && amount > 0) {
+      result[entry.substring(0, separator)] = amount;
+    }
+  }
+  return result;
 }
 
 class _BrandTitle extends StatelessWidget {
@@ -298,6 +385,8 @@ class _DashboardPage extends StatelessWidget {
     required this.profile,
     required this.opportunities,
     required this.completedSteps,
+    required this.actualRecovered,
+    required this.premiumUnlocked,
     required this.onOpen,
     required this.onPlanTap,
   });
@@ -305,28 +394,39 @@ class _DashboardPage extends StatelessWidget {
   final HouseholdProfile profile;
   final List<GimmeOpportunity> opportunities;
   final Set<String> completedSteps;
+  final Map<String, int> actualRecovered;
+  final bool premiumUnlocked;
   final ValueChanged<GimmeOpportunity> onOpen;
   final VoidCallback onPlanTap;
 
   @override
   Widget build(BuildContext context) {
-    final claimable = totalPotential(opportunities);
-    final recovered = recoveredAmount(opportunities, completedSteps);
+    final annualRange = annualizedPotentialRange(opportunities);
+    final prepared = preparedAmount(opportunities, completedSteps);
+    final actual = actualRecoveredAmount(actualRecovered);
     final urgent = urgentCount(opportunities);
-    final top = opportunities.first;
+    final top = visibleOpportunities(
+      opportunities,
+      premiumUnlocked: premiumUnlocked,
+    ).first;
+    final nextDeadline = opportunities.reduce(
+      (a, b) => a.daysLeft <= b.daysLeft ? a : b,
+    );
 
     return ListView(
       key: const ValueKey('dashboard'),
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
       children: [
         _HeroMoneyCard(
-          claimable: claimable,
-          recovered: recovered,
+          annualRange: annualRange,
+          prepared: prepared,
+          actualRecovered: actual,
           urgent: urgent,
+          premiumUnlocked: premiumUnlocked,
           onPlanTap: onPlanTap,
         ),
         const SizedBox(height: 14),
-        _ShockCard(top: top, urgent: urgent),
+        _ShockCard(top: nextDeadline, urgent: urgent),
         const SizedBox(height: 14),
         _HouseholdStrip(profile: profile),
         const SizedBox(height: 14),
@@ -335,6 +435,7 @@ class _DashboardPage extends StatelessWidget {
         _OpportunityCard(
           opportunity: top,
           progress: questProgress(top, completedSteps),
+          lockedPreview: !premiumUnlocked,
           onTap: () => onOpen(top),
           highlighted: true,
         ),
@@ -345,15 +446,19 @@ class _DashboardPage extends StatelessWidget {
 
 class _HeroMoneyCard extends StatelessWidget {
   const _HeroMoneyCard({
-    required this.claimable,
-    required this.recovered,
+    required this.annualRange,
+    required this.prepared,
+    required this.actualRecovered,
     required this.urgent,
+    required this.premiumUnlocked,
     required this.onPlanTap,
   });
 
-  final int claimable;
-  final int recovered;
+  final AmountRange annualRange;
+  final int prepared;
+  final int actualRecovered;
   final int urgent;
+  final bool premiumUnlocked;
   final VoidCallback onPlanTap;
 
   @override
@@ -382,7 +487,7 @@ class _HeroMoneyCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '今月の概算奪還候補',
+                '年間の取り戻し見込み',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: const Color(0xFFD6E8E4),
                 ),
@@ -391,17 +496,21 @@ class _HeroMoneyCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            formatYen(claimable),
+            premiumUnlocked
+                ? formatYenRange(annualRange)
+                : formatTeaserAmount(annualRange.midpoint),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 38,
+              fontSize: 36,
               height: 1.05,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 10),
           Text(
-            '制度、控除、解約忘れを世帯単位でスキャンした概算中央値です。受給や返金を保証する金額ではありません。',
+            premiumUnlocked
+                ? '制度、控除、サブスク、還付候補を年次換算で統合しています。'
+                : '無料版では金額の概要のみ表示します。内訳と手順はPlusで解放されます。',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: const Color(0xFFC8D8D5)),
@@ -413,16 +522,20 @@ class _HeroMoneyCard extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _MetricPill(label: '準備済み', value: formatYen(recovered)),
+              _MetricPill(label: '申請準備完了', value: formatYen(prepared)),
+              _MetricPill(label: '実回収', value: formatYen(actualRecovered)),
               _MetricPill(label: '期限14日以内', value: '$urgent件'),
-              const _MetricPill(label: '表示単位', value: 'レンジ推定'),
             ],
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
             onPressed: onPlanTap,
-            icon: const Icon(Icons.workspace_premium_outlined),
-            label: const Text('世帯プランで毎月監視'),
+            icon: Icon(
+              premiumUnlocked
+                  ? Icons.verified_outlined
+                  : Icons.workspace_premium_outlined,
+            ),
+            label: Text(premiumUnlocked ? 'Gimme Plus 有効' : 'Plusで全候補を解放'),
           ),
         ],
       ),
@@ -456,12 +569,12 @@ class _ShockCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '放置すると取り損ねる候補があります',
+                    '次の締切は実日付で追跡中',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '最優先は「${top.title}」。${formatYenRange(top.amountRange)}の範囲で確認価値があり、期限14日以内の候補が$urgent件あります。',
+                    '最短は「${top.title}」。締切 ${formatDeadline(top.deadline)}、残り${top.daysLeft}日。期限14日以内の候補が$urgent件あります。',
                   ),
                 ],
               ),
@@ -548,15 +661,20 @@ class _HouseholdStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cityMatched = cityProfileFor(profile.city) != null;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const CircleAvatar(
-              backgroundColor: Color(0xFFE8F3F1),
-              foregroundColor: Color(0xFF0F766E),
-              child: Icon(Icons.home_work_outlined),
+            CircleAvatar(
+              backgroundColor: cityMatched
+                  ? const Color(0xFFE8F3F1)
+                  : const Color(0xFFF1F5F9),
+              foregroundColor: cityMatched
+                  ? const Color(0xFF0F766E)
+                  : const Color(0xFF64748B),
+              child: const Icon(Icons.home_work_outlined),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -569,7 +687,7 @@ class _HouseholdStrip extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '大人${profile.adults}人 / 子ども${profile.children}人  |  医療費 ${formatYen(profile.medicalCost)}',
+                    '${cityMatched ? '地域制度反映中' : '全国共通のみ'}  |  サブスク${profile.subscriptionCount}本 / 未使用候補${profile.unusedSubscriptionCount}本',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -587,15 +705,27 @@ class _OpportunitiesPage extends StatelessWidget {
   const _OpportunitiesPage({
     required this.opportunities,
     required this.completedSteps,
+    required this.premiumUnlocked,
     required this.onOpen,
+    required this.onPlanTap,
   });
 
   final List<GimmeOpportunity> opportunities;
   final Set<String> completedSteps;
+  final bool premiumUnlocked;
   final ValueChanged<GimmeOpportunity> onOpen;
+  final VoidCallback onPlanTap;
 
   @override
   Widget build(BuildContext context) {
+    final visible = visibleOpportunities(
+      opportunities,
+      premiumUnlocked: premiumUnlocked,
+    );
+    final lockedCount = lockedOpportunityCount(
+      opportunities,
+      premiumUnlocked: premiumUnlocked,
+    );
     return ListView(
       key: const ValueKey('opportunities'),
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
@@ -603,20 +733,25 @@ class _OpportunitiesPage extends StatelessWidget {
         Text('奪還候補', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 6),
         Text(
-          '期限、見込み額、世帯条件から優先順位をつけています。',
+          premiumUnlocked
+              ? '地域、期限、期間単位、世帯条件から全候補を優先順位づけしています。'
+              : '無料版では上位$freeVisibleOpportunityCount件まで表示します。金額内訳と手順はPlusで解放されます。',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 14),
-        ...opportunities.map(
+        ...visible.map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: _OpportunityCard(
               opportunity: item,
               progress: questProgress(item, completedSteps),
+              lockedPreview: !premiumUnlocked,
               onTap: () => onOpen(item),
             ),
           ),
         ),
+        if (lockedCount > 0)
+          _LockedCandidatesCard(count: lockedCount, onPlanTap: onPlanTap),
       ],
     );
   }
@@ -626,18 +761,23 @@ class _OpportunityCard extends StatelessWidget {
   const _OpportunityCard({
     required this.opportunity,
     required this.progress,
+    required this.lockedPreview,
     required this.onTap,
     this.highlighted = false,
   });
 
   final GimmeOpportunity opportunity;
   final double progress;
+  final bool lockedPreview;
   final VoidCallback onTap;
   final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
     final color = _categoryColor(opportunity.category);
+    final amountText = lockedPreview
+        ? formatTeaserAmount(opportunity.annualizedAmount)
+        : formatYenRange(opportunity.amountRange);
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
@@ -675,24 +815,24 @@ class _OpportunityCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          opportunity.category,
+                          '${opportunity.category} / ${opportunity.period.label} / ${opportunity.sourceLabel}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
                   SizedBox(
-                    width: 126,
+                    width: 116,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          formatYenRange(opportunity.amountRange),
+                          amountText,
+                          textAlign: TextAlign.right,
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
-                            fontSize: 14,
+                            fontSize: 13,
                           ),
-                          textAlign: TextAlign.right,
                         ),
                         Text(
                           '残り${opportunity.daysLeft}日',
@@ -727,10 +867,10 @@ class _OpportunityCard extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   _Tag(label: '根拠 ${opportunity.confidenceLabel}'),
-                  _Tag(label: '概算レンジ'),
+                  _Tag(label: '締切 ${formatDeadline(opportunity.deadline)}'),
+                  if (lockedPreview) const _Tag(label: 'Plusで内訳解放'),
                   if (opportunity.urgent)
                     const _Tag(label: '期限近い', warning: true),
-                  _Tag(label: '${opportunity.steps.length}ステップ'),
                 ],
               ),
             ],
@@ -741,18 +881,61 @@ class _OpportunityCard extends StatelessWidget {
   }
 }
 
+class _LockedCandidatesCard extends StatelessWidget {
+  const _LockedCandidatesCard({required this.count, required this.onPlanTap});
+
+  final int count;
+  final VoidCallback onPlanTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFECFDF5),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'まだ見えていない候補があります',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Text('$count件の候補、制度名、手順、書類リスト、期限通知はPlusで解放されます。'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onPlanTap,
+              icon: const Icon(Icons.lock_open_outlined),
+              label: const Text('Plusで全候補を解放'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class QuestDetailPage extends StatelessWidget {
   const QuestDetailPage({
     super.key,
     required this.opportunity,
+    required this.locked,
     required this.completedSteps,
+    required this.actualRecovered,
     required this.onStepChanged,
+    required this.onActualRecoveredChanged,
+    required this.onPlanTap,
   });
 
   final GimmeOpportunity opportunity;
+  final bool locked;
   final Set<String> completedSteps;
+  final int actualRecovered;
   final Future<void> Function(String opportunityId, int index, bool value)
   onStepChanged;
+  final Future<void> Function(String opportunityId, int amount)
+  onActualRecoveredChanged;
+  final VoidCallback onPlanTap;
 
   @override
   Widget build(BuildContext context) {
@@ -767,109 +950,215 @@ class QuestDetailPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _Tag(label: opportunity.category),
-                      const SizedBox(height: 12),
-                      Text(
-                        opportunity.title,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(opportunity.reason),
-                      const SizedBox(height: 18),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _BigStat(
-                            label: '概算レンジ',
-                            value: formatYenRange(opportunity.amountRange),
-                          ),
-                          _BigStat(
-                            label: '期限',
-                            value: '残り${opportunity.daysLeft}日',
-                          ),
-                          _BigStat(
-                            label: '根拠強度',
-                            value: opportunity.confidenceLabel,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 10,
-                          color: color,
-                          backgroundColor: const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                    ],
-                  ),
+                _QuestHeader(
+                  opportunity: opportunity,
+                  locked: locked,
+                  progress: progress,
+                  color: color,
                 ),
                 const SizedBox(height: 16),
-                _EstimateBasisCard(opportunity: opportunity),
-                const SizedBox(height: 16),
-                Text('必要なもの', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: opportunity.documents
-                      .map((doc) => _Tag(label: doc))
-                      .toList(),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  '申請準備ステップ',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                ...List.generate(opportunity.steps.length, (index) {
-                  final step = opportunity.steps[index];
-                  final key = stepKey(opportunity.id, index);
-                  final checked = completedSteps.contains(key);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Card(
-                      child: CheckboxListTile(
-                        value: checked,
-                        onChanged: (value) => onStepChanged(
-                          opportunity.id,
-                          index,
-                          value ?? false,
+                if (locked)
+                  _LockedDetailCard(onPlanTap: onPlanTap)
+                else ...[
+                  _EstimateBasisCard(opportunity: opportunity),
+                  const SizedBox(height: 16),
+                  Text('必要なもの', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: opportunity.documents
+                        .map((doc) => _Tag(label: doc))
+                        .toList(),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    '申請準備ステップ',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  ...List.generate(opportunity.steps.length, (index) {
+                    final step = opportunity.steps[index];
+                    final key = stepKey(opportunity.id, index);
+                    final checked = completedSteps.contains(key);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Card(
+                        child: CheckboxListTile(
+                          value: checked,
+                          onChanged: (value) => onStepChanged(
+                            opportunity.id,
+                            index,
+                            value ?? false,
+                          ),
+                          title: Text(
+                            step.title,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(step.detail),
+                          controlAffinity: ListTileControlAffinity.leading,
                         ),
-                        title: Text(
-                          step.title,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(step.detail),
-                        controlAffinity: ListTileControlAffinity.leading,
                       ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('クエストを保存して戻る'),
-                ),
+                    );
+                  }),
+                  _ActualRecoveredCard(
+                    amount: actualRecovered,
+                    onEdit: () => _showRecoveredDialog(context),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 const _ComplianceNote(),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRecoveredDialog(BuildContext context) async {
+    final controller = TextEditingController(
+      text: actualRecovered > 0 ? actualRecovered.toString() : '',
+    );
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('実際に戻った金額'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            suffixText: '円',
+            helperText: '申請準備額ではなく、実際に戻った/節約できた金額だけを入力します。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(0),
+            child: const Text('削除'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(
+                context,
+              ).pop(int.tryParse(controller.text.replaceAll(',', '')) ?? 0);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result != null) {
+      await onActualRecoveredChanged(opportunity.id, result);
+    }
+  }
+}
+
+class _QuestHeader extends StatelessWidget {
+  const _QuestHeader({
+    required this.opportunity,
+    required this.locked,
+    required this.progress,
+    required this.color,
+  });
+
+  final GimmeOpportunity opportunity;
+  final bool locked;
+  final double progress;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _Tag(label: opportunity.category),
+              _Tag(label: opportunity.period.label),
+              if (locked) const _Tag(label: 'Plus詳細'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            opportunity.title,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(opportunity.reason),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _BigStat(
+                label: locked ? '概算' : '概算レンジ',
+                value: locked
+                    ? formatTeaserAmount(opportunity.annualizedAmount)
+                    : formatYenRange(opportunity.amountRange),
+              ),
+              _BigStat(
+                label: '締切',
+                value: formatDeadline(opportunity.deadline),
+              ),
+              _BigStat(label: '残り', value: '${opportunity.daysLeft}日'),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              color: color,
+              backgroundColor: const Color(0xFFE2E8F0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LockedDetailCard extends StatelessWidget {
+  const _LockedDetailCard({required this.onPlanTap});
+
+  final VoidCallback onPlanTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFECFDF5),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Plusで解放される詳細',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            const Text('制度名、必要書類、申請手順、推定根拠、期限通知、実回収額の記録を解放します。'),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: onPlanTap,
+              icon: const Icon(Icons.lock_open_outlined),
+              label: const Text('Gimme Plusを見る'),
+            ),
+          ],
         ),
       ),
     );
@@ -918,7 +1207,207 @@ class _EstimateBasisCard extends StatelessWidget {
   }
 }
 
-class _HouseholdPage extends StatelessWidget {
+class _ActualRecoveredCard extends StatelessWidget {
+  const _ActualRecoveredCard({required this.amount, required this.onEdit});
+
+  final int amount;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              backgroundColor: Color(0xFFE8F3F1),
+              foregroundColor: Color(0xFF0F766E),
+              child: Icon(Icons.payments_outlined),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '実回収額',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  Text(amount > 0 ? formatYen(amount) : 'まだ記録なし'),
+                ],
+              ),
+            ),
+            TextButton(onPressed: onEdit, child: const Text('記録')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AiScanPage extends StatefulWidget {
+  const AiScanPage({
+    super.key,
+    required this.profile,
+    required this.onProfileChanged,
+  });
+
+  final HouseholdProfile profile;
+  final ValueChanged<HouseholdProfile> onProfileChanged;
+
+  @override
+  State<AiScanPage> createState() => _AiScanPageState();
+}
+
+class _AiScanPageState extends State<AiScanPage> {
+  late final TextEditingController _controller;
+  SubscriptionScanResult? _result;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text:
+          'Netflix 月額 1,980円\nAdobe 年払い換算 6,480円 使ってない\nChatGPT Plus 3,000円\n古いクラウド storage 1,200円 未使用',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _result;
+    return ListView(
+      key: const ValueKey('ai-scan'),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
+      children: [
+        Text('AI明細スキャン', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 6),
+        Text(
+          'カード明細や購読一覧を貼り付けると、定期課金候補を抽出し、世帯条件へ反映します。確認版はローカル解析、正式版はAI APIへ差し替え可能な設計です。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _controller,
+                  minLines: 7,
+                  maxLines: 11,
+                  decoration: const InputDecoration(
+                    labelText: '明細テキスト',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _result = analyzeSubscriptionStatement(
+                          _controller.text,
+                        );
+                      });
+                    },
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('定期課金を抽出'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (result != null) ...[
+          const SizedBox(height: 14),
+          _ScanResultCard(
+            result: result,
+            onApply: result.hasData
+                ? () {
+                    widget.onProfileChanged(
+                      widget.profile.copyWith(
+                        monthlySubscriptions: result.monthlyTotal,
+                        subscriptionCount: result.items.length,
+                        unusedSubscriptionCount: result.likelyUnusedCount,
+                        unusedSubscriptionMonths: result.likelyUnusedCount > 0
+                            ? 4
+                            : 1,
+                      ),
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('サブスク条件へ反映しました')),
+                    );
+                  }
+                : null,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ScanResultCard extends StatelessWidget {
+  const _ScanResultCard({required this.result, required this.onApply});
+
+  final SubscriptionScanResult result;
+  final VoidCallback? onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('抽出結果', style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            _PlanRow(label: '月額合計', value: formatYen(result.monthlyTotal)),
+            _PlanRow(label: '定期課金候補', value: '${result.items.length}件'),
+            _PlanRow(label: '未使用候補', value: '${result.likelyUnusedCount}件'),
+            const SizedBox(height: 8),
+            ...result.items.map(
+              (item) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  item.likelyUnused
+                      ? Icons.warning_amber_outlined
+                      : Icons.receipt_long_outlined,
+                  color: item.likelyUnused
+                      ? const Color(0xFFC2410C)
+                      : const Color(0xFF0F766E),
+                ),
+                title: Text(
+                  item.name,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(item.reason),
+                trailing: Text(formatYen(item.amount)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: onApply,
+              icon: const Icon(Icons.sync_alt),
+              label: const Text('世帯条件に反映'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HouseholdPage extends StatefulWidget {
   const _HouseholdPage({
     required this.profile,
     required this.onChanged,
@@ -930,6 +1419,36 @@ class _HouseholdPage extends StatelessWidget {
   final VoidCallback onPrivacyTap;
 
   @override
+  State<_HouseholdPage> createState() => _HouseholdPageState();
+}
+
+class _HouseholdPageState extends State<_HouseholdPage> {
+  late HouseholdProfile _draft;
+  late final TextEditingController _cityController;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = widget.profile;
+    _cityController = TextEditingController(text: _draft.city);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HouseholdPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile != widget.profile) {
+      _draft = widget.profile;
+      _cityController.text = widget.profile.city;
+    }
+  }
+
+  @override
+  void dispose() {
+    _cityController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListView(
       key: const ValueKey('household'),
@@ -938,7 +1457,7 @@ class _HouseholdPage extends StatelessWidget {
         Text('世帯プロファイル', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 6),
         Text(
-          '条件を変えると、奪還候補と見込み額が変わります。',
+          '保存した条件だけが候補計算に反映されます。地域名は対応エリアに一致すると自治体候補が変わります。',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 14),
@@ -948,67 +1467,122 @@ class _HouseholdPage extends StatelessWidget {
             child: Column(
               children: [
                 TextFormField(
-                  initialValue: profile.city,
+                  controller: _cityController,
                   decoration: const InputDecoration(
                     labelText: '居住地',
                     prefixIcon: Icon(Icons.location_city_outlined),
+                    helperText: '例: 東京都杉並区 / 横浜市 / 大阪市 / 札幌市 / 福岡市',
                   ),
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(city: value)),
+                  onChanged: (value) => _draft = _draft.copyWith(city: value),
                 ),
                 const SizedBox(height: 14),
                 _StepperRow(
                   label: '大人',
-                  value: profile.adults,
+                  value: _draft.adults,
                   min: 1,
                   max: 4,
                   onChanged: (value) =>
-                      onChanged(profile.copyWith(adults: value)),
+                      setState(() => _draft = _draft.copyWith(adults: value)),
                 ),
                 _StepperRow(
                   label: '子ども',
-                  value: profile.children,
+                  value: _draft.children,
                   min: 0,
                   max: 5,
                   onChanged: (value) =>
-                      onChanged(profile.copyWith(children: value)),
+                      setState(() => _draft = _draft.copyWith(children: value)),
                 ),
                 const Divider(height: 28),
                 _AmountSlider(
                   label: '年間医療費',
-                  value: profile.medicalCost,
+                  value: _draft.medicalCost,
                   min: 0,
                   max: 420000,
                   divisions: 42,
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(medicalCost: value)),
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(medicalCost: value),
+                  ),
                 ),
                 _AmountSlider(
-                  label: '月額サブスク',
-                  value: profile.monthlySubscriptions,
+                  label: '月額サブスク合計',
+                  value: _draft.monthlySubscriptions,
                   min: 0,
                   max: 50000,
                   divisions: 50,
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(monthlySubscriptions: value)),
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(monthlySubscriptions: value),
+                  ),
+                ),
+                _StepperRow(
+                  label: '契約本数',
+                  value: _draft.subscriptionCount,
+                  min: 0,
+                  max: 30,
+                  unit: '本',
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(subscriptionCount: value),
+                  ),
+                ),
+                _StepperRow(
+                  label: '未使用候補',
+                  value: _draft.unusedSubscriptionCount,
+                  min: 0,
+                  max: 30,
+                  unit: '本',
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(
+                      unusedSubscriptionCount: value,
+                    ),
+                  ),
+                ),
+                _StepperRow(
+                  label: '最終利用から',
+                  value: _draft.unusedSubscriptionMonths,
+                  min: 0,
+                  max: 24,
+                  unit: 'か月',
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(
+                      unusedSubscriptionMonths: value,
+                    ),
+                  ),
                 ),
                 SwitchListTile(
-                  value: profile.hasHomeLoan,
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(hasHomeLoan: value)),
+                  value: _draft.hasHomeLoan,
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(hasHomeLoan: value),
+                  ),
                   title: const Text('住宅ローンあり'),
                 ),
                 SwitchListTile(
-                  value: profile.hasCaregiving,
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(hasCaregiving: value)),
+                  value: _draft.hasCaregiving,
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(hasCaregiving: value),
+                  ),
                   title: const Text('介護関連の支出あり'),
                 ),
                 SwitchListTile(
-                  value: profile.recentMove,
-                  onChanged: (value) =>
-                      onChanged(profile.copyWith(recentMove: value)),
+                  value: _draft.recentMove,
+                  onChanged: (value) => setState(
+                    () => _draft = _draft.copyWith(recentMove: value),
+                  ),
                   title: const Text('最近引越しをした'),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      widget.onChanged(
+                        _draft.copyWith(city: _cityController.text),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('世帯条件を保存しました')),
+                      );
+                    },
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('世帯条件を保存'),
+                  ),
                 ),
               ],
             ),
@@ -1024,7 +1598,7 @@ class _HouseholdPage extends StatelessWidget {
             ),
             subtitle: const Text('この確認版では世帯情報を端末内に保存し、外部送信しません。'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: onPrivacyTap,
+            onTap: widget.onPrivacyTap,
           ),
         ),
       ],
@@ -1039,12 +1613,14 @@ class _StepperRow extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.unit = '人',
   });
 
   final String label;
   final int value;
   final int min;
   final int max;
+  final String unit;
   final ValueChanged<int> onChanged;
 
   @override
@@ -1063,7 +1639,7 @@ class _StepperRow extends StatelessWidget {
             onPressed: value > min ? () => onChanged(value - 1) : null,
             icon: const Icon(Icons.remove),
           ),
-          SizedBox(width: 46, child: Center(child: Text('$value人'))),
+          SizedBox(width: 70, child: Center(child: Text('$value$unit'))),
           IconButton.filledTonal(
             onPressed: value < max ? () => onChanged(value + 1) : null,
             icon: const Icon(Icons.add),
@@ -1126,20 +1702,22 @@ class _InsightsPage extends StatelessWidget {
   const _InsightsPage({
     required this.opportunities,
     required this.completedSteps,
+    required this.actualRecovered,
     required this.premiumUnlocked,
     required this.onPlanTap,
   });
 
   final List<GimmeOpportunity> opportunities;
   final Set<String> completedSteps;
+  final Map<String, int> actualRecovered;
   final bool premiumUnlocked;
   final VoidCallback onPlanTap;
 
   @override
   Widget build(BuildContext context) {
-    final claimable = totalPotential(opportunities);
-    final recovered = recoveredAmount(opportunities, completedSteps);
-    final monthlyValue = (claimable / 12).round();
+    final annualRange = annualizedPotentialRange(opportunities);
+    final prepared = preparedAmount(opportunities, completedSteps);
+    final actual = actualRecoveredAmount(actualRecovered);
     return ListView(
       key: const ValueKey('insights'),
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
@@ -1153,16 +1731,13 @@ class _InsightsPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '世帯監視プラン仮説',
+                  '成果サマリー',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  '今月の概算中央値 ${formatYen(claimable)} に対して、月額1,480円の監視プランを提案できます。',
-                ),
-                const SizedBox(height: 14),
-                _PlanRow(label: '申請準備済み', value: formatYen(recovered)),
-                _PlanRow(label: '月あたり期待値', value: formatYen(monthlyValue)),
+                _PlanRow(label: '年間見込み', value: formatYenRange(annualRange)),
+                _PlanRow(label: '申請準備完了額', value: formatYen(prepared)),
+                _PlanRow(label: '実回収額', value: formatYen(actual)),
                 _PlanRow(
                   label: '期限14日以内',
                   value: '${urgentCount(opportunities)}件',
@@ -1189,26 +1764,26 @@ class _InsightsPage extends StatelessWidget {
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'ネイティブ版で伸ばす導線',
+              children: const [
+                Text(
+                  'Plusで継続する理由',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 _NativeReadyItem(
                   icon: Icons.notifications_active_outlined,
                   title: '期限通知',
-                  text: '申請期限と制度更新をプッシュ通知で届ける。',
+                  text: '実締切日に合わせて、申請漏れをプッシュ通知で防ぎます。',
                 ),
                 _NativeReadyItem(
-                  icon: Icons.widgets_outlined,
-                  title: 'ホーム画面ウィジェット',
-                  text: '今月の取り戻せる金額を常時表示する。',
+                  icon: Icons.lock_open_outlined,
+                  title: '詳細解放',
+                  text: '無料ではぼかした金額を、Plusでは制度名・手順・書類まで解放します。',
                 ),
                 _NativeReadyItem(
-                  icon: Icons.group_add_outlined,
+                  icon: Icons.family_restroom_outlined,
                   title: '家族共有',
-                  text: '配偶者や親の条件を同意つきで追加する。',
+                  text: '配偶者や親の条件を同意つきで追加し、世帯全体を監視します。',
                 ),
               ],
             ),
@@ -1253,7 +1828,7 @@ class PaywallPage extends StatelessWidget {
                       const _Tag(label: 'Native-ready subscription'),
                       const SizedBox(height: 14),
                       const Text(
-                        '毎月、取り損ねを先回りで見つける',
+                        '隠れた取り損ねを毎月監視する',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 26,
@@ -1263,7 +1838,7 @@ class PaywallPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '制度更新、期限通知、家族共有、書類チェックをまとめて監視します。',
+                        '全候補、制度名、必要書類、期限通知、実回収記録、AI明細スキャンを解放します。',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: const Color(0xFFD6E8E4),
                         ),
@@ -1307,19 +1882,19 @@ class PaywallPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         const _PlanFeature(
+                          icon: Icons.lock_open_outlined,
+                          title: '候補の全件表示',
+                          text: '無料版で隠れている候補と金額レンジ、制度名、推定根拠を解放します。',
+                        ),
+                        const _PlanFeature(
                           icon: Icons.notification_important_outlined,
                           title: '期限と制度更新の監視',
-                          text: '住んでいる地域と世帯条件から、期限前に候補を出します。',
+                          text: '実締切日をもとに、期限前の候補を見逃さない状態にします。',
                         ),
                         const _PlanFeature(
-                          icon: Icons.document_scanner_outlined,
-                          title: '書類の抜け漏れチェック',
-                          text: '提出前に必要書類と入力漏れをクエスト単位で確認します。',
-                        ),
-                        const _PlanFeature(
-                          icon: Icons.family_restroom_outlined,
-                          title: '家族共有',
-                          text: '配偶者、親、子どもの条件を同意つきで管理します。',
+                          icon: Icons.auto_awesome_outlined,
+                          title: 'AI明細スキャン',
+                          text: '明細テキストから定期課金を抽出し、サブスク回収額に反映します。',
                         ),
                         const SizedBox(height: 12),
                         FilledButton.icon(
@@ -1382,7 +1957,7 @@ class PrivacyPolicyPage extends StatelessWidget {
                 _PolicySection(
                   title: '確認版のデータ保存',
                   text:
-                      'このWeb確認版では、世帯人数、医療費、サブスク額、チェックリストの進捗を端末内の保存領域にのみ保存します。外部サーバーへ送信しません。',
+                      'このWeb確認版では、世帯人数、医療費、サブスク額、チェックリスト、実回収額を端末内の保存領域にのみ保存します。外部サーバーへ送信しません。',
                 ),
                 _PolicySection(
                   title: '正式版で追加される可能性',
