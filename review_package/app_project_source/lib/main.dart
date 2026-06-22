@@ -60,11 +60,13 @@ class _GimmeHomeState extends State<GimmeHome> {
   static const _caregivingKey = 'caregiving';
   static const _recentMoveKey = 'recentMove';
   static const _completedKey = 'completedSteps';
+  static const _premiumKey = 'premiumUnlocked';
 
   HouseholdProfile _profile = HouseholdProfile.demo;
   Set<String> _completedSteps = <String>{};
   int _selectedIndex = 0;
   bool _loaded = false;
+  bool _premiumUnlocked = false;
   SharedPreferences? _prefs;
 
   List<GimmeOpportunity> get _opportunities => buildOpportunities(_profile);
@@ -98,6 +100,7 @@ class _GimmeHomeState extends State<GimmeHome> {
       );
       _completedSteps = (prefs.getStringList(_completedKey) ?? <String>[])
           .toSet();
+      _premiumUnlocked = prefs.getBool(_premiumKey) ?? false;
       _loaded = true;
     });
   }
@@ -133,6 +136,11 @@ class _GimmeHomeState extends State<GimmeHome> {
     );
   }
 
+  Future<void> _setPremiumUnlocked(bool value) async {
+    setState(() => _premiumUnlocked = value);
+    await _prefs?.setBool(_premiumKey, value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
@@ -141,17 +149,23 @@ class _GimmeHomeState extends State<GimmeHome> {
         opportunities: _opportunities,
         completedSteps: _completedSteps,
         onOpen: _openQuest,
-        onPlanTap: () => setState(() => _selectedIndex = 3),
+        onPlanTap: _openPaywall,
       ),
       _OpportunitiesPage(
         opportunities: _opportunities,
         completedSteps: _completedSteps,
         onOpen: _openQuest,
       ),
-      _HouseholdPage(profile: _profile, onChanged: _saveProfile),
+      _HouseholdPage(
+        profile: _profile,
+        onChanged: _saveProfile,
+        onPrivacyTap: _openPrivacy,
+      ),
       _InsightsPage(
         opportunities: _opportunities,
         completedSteps: _completedSteps,
+        premiumUnlocked: _premiumUnlocked,
+        onPlanTap: _openPaywall,
       ),
     ];
 
@@ -224,6 +238,23 @@ class _GimmeHomeState extends State<GimmeHome> {
       ),
     );
   }
+
+  void _openPaywall() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PaywallPage(
+          unlocked: _premiumUnlocked,
+          onUnlockChanged: _setPremiumUnlocked,
+        ),
+      ),
+    );
+  }
+
+  void _openPrivacy() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const PrivacyPolicyPage()));
+  }
 }
 
 class _BrandTitle extends StatelessWidget {
@@ -295,6 +326,8 @@ class _DashboardPage extends StatelessWidget {
           onPlanTap: onPlanTap,
         ),
         const SizedBox(height: 14),
+        _ShockCard(top: top, urgent: urgent),
+        const SizedBox(height: 14),
         _HouseholdStrip(profile: profile),
         const SizedBox(height: 14),
         Text('次の奪還クエスト', style: Theme.of(context).textTheme.titleLarge),
@@ -349,7 +382,7 @@ class _HeroMoneyCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '今月の奪還候補',
+                '今月の概算奪還候補',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: const Color(0xFFD6E8E4),
                 ),
@@ -368,11 +401,13 @@ class _HeroMoneyCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '制度、控除、解約忘れを世帯単位でスキャンした見込み額です。',
+            '制度、控除、解約忘れを世帯単位でスキャンした概算中央値です。受給や返金を保証する金額ではありません。',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: const Color(0xFFC8D8D5)),
           ),
+          const SizedBox(height: 12),
+          const _HeroDisclaimer(),
           const SizedBox(height: 18),
           Wrap(
             spacing: 10,
@@ -380,7 +415,7 @@ class _HeroMoneyCard extends StatelessWidget {
             children: [
               _MetricPill(label: '準備済み', value: formatYen(recovered)),
               _MetricPill(label: '期限14日以内', value: '$urgent件'),
-              _MetricPill(label: '世帯監視', value: '有効'),
+              const _MetricPill(label: '表示単位', value: 'レンジ推定'),
             ],
           ),
           const SizedBox(height: 18),
@@ -388,6 +423,81 @@ class _HeroMoneyCard extends StatelessWidget {
             onPressed: onPlanTap,
             icon: const Icon(Icons.workspace_premium_outlined),
             label: const Text('世帯プランで毎月監視'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShockCard extends StatelessWidget {
+  const _ShockCard({required this.top, required this.urgent});
+
+  final GimmeOpportunity top;
+  final int urgent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFFFFBEB),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const CircleAvatar(
+              backgroundColor: Color(0xFFFDE68A),
+              foregroundColor: Color(0xFF92400E),
+              child: Icon(Icons.priority_high_rounded),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '放置すると取り損ねる候補があります',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '最優先は「${top.title}」。${formatYenRange(top.amountRange)}の範囲で確認価値があり、期限14日以内の候補が$urgent件あります。',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroDisclaimer extends StatelessWidget {
+  const _HeroDisclaimer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 18, color: Color(0xFFD6E8E4)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '正式申請前に自治体・税務署・契約先の一次情報で確認します。Gimmeは見落とし候補を早く発見するための確認アシスタントです。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFD6E8E4),
+                height: 1.35,
+              ),
+            ),
           ),
         ],
       ),
@@ -571,27 +681,31 @@ class _OpportunityCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        formatYen(opportunity.amount),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
+                  SizedBox(
+                    width: 126,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          formatYenRange(opportunity.amountRange),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.right,
                         ),
-                      ),
-                      Text(
-                        '残り${opportunity.daysLeft}日',
-                        style: TextStyle(
-                          color: opportunity.urgent
-                              ? const Color(0xFFC2410C)
-                              : const Color(0xFF64748B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                        Text(
+                          '残り${opportunity.daysLeft}日',
+                          style: TextStyle(
+                            color: opportunity.urgent
+                                ? const Color(0xFFC2410C)
+                                : const Color(0xFF64748B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -612,7 +726,8 @@ class _OpportunityCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _Tag(label: '一致度 ${opportunity.confidence}%'),
+                  _Tag(label: '根拠 ${opportunity.confidenceLabel}'),
+                  _Tag(label: '概算レンジ'),
                   if (opportunity.urgent)
                     const _Tag(label: '期限近い', warning: true),
                   _Tag(label: '${opportunity.steps.length}ステップ'),
@@ -676,16 +791,16 @@ class QuestDetailPage extends StatelessWidget {
                         runSpacing: 10,
                         children: [
                           _BigStat(
-                            label: '見込み額',
-                            value: formatYen(opportunity.amount),
+                            label: '概算レンジ',
+                            value: formatYenRange(opportunity.amountRange),
                           ),
                           _BigStat(
                             label: '期限',
                             value: '残り${opportunity.daysLeft}日',
                           ),
                           _BigStat(
-                            label: '一致度',
-                            value: '${opportunity.confidence}%',
+                            label: '根拠強度',
+                            value: opportunity.confidenceLabel,
                           ),
                         ],
                       ),
@@ -702,6 +817,8 @@ class QuestDetailPage extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                _EstimateBasisCard(opportunity: opportunity),
                 const SizedBox(height: 16),
                 Text('必要なもの', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
@@ -759,11 +876,58 @@ class QuestDetailPage extends StatelessWidget {
   }
 }
 
+class _EstimateBasisCard extends StatelessWidget {
+  const _EstimateBasisCard({required this.opportunity});
+
+  final GimmeOpportunity opportunity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFFF8FAFC),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.fact_check_outlined, color: Color(0xFF0F766E)),
+                const SizedBox(width: 8),
+                Text(
+                  '推定根拠',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(opportunity.estimateBasis),
+            const SizedBox(height: 10),
+            Text(
+              '表示額は候補発見用の幅です。実際の受給額・還付額・節約額は、申請先の条件、所得、契約、提出時期で変わります。',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HouseholdPage extends StatelessWidget {
-  const _HouseholdPage({required this.profile, required this.onChanged});
+  const _HouseholdPage({
+    required this.profile,
+    required this.onChanged,
+    required this.onPrivacyTap,
+  });
 
   final HouseholdProfile profile;
   final ValueChanged<HouseholdProfile> onChanged;
+  final VoidCallback onPrivacyTap;
 
   @override
   Widget build(BuildContext context) {
@@ -848,6 +1012,19 @@ class _HouseholdPage extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text(
+              'プライバシーとデータの扱い',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: const Text('この確認版では世帯情報を端末内に保存し、外部送信しません。'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: onPrivacyTap,
           ),
         ),
       ],
@@ -949,10 +1126,14 @@ class _InsightsPage extends StatelessWidget {
   const _InsightsPage({
     required this.opportunities,
     required this.completedSteps,
+    required this.premiumUnlocked,
+    required this.onPlanTap,
   });
 
   final List<GimmeOpportunity> opportunities;
   final Set<String> completedSteps;
+  final bool premiumUnlocked;
+  final VoidCallback onPlanTap;
 
   @override
   Widget build(BuildContext context) {
@@ -977,7 +1158,7 @@ class _InsightsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '今月の候補 ${formatYen(claimable)} に対して、月額1,480円の監視プランを提案できます。',
+                  '今月の概算中央値 ${formatYen(claimable)} に対して、月額1,480円の監視プランを提案できます。',
                 ),
                 const SizedBox(height: 14),
                 _PlanRow(label: '申請準備済み', value: formatYen(recovered)),
@@ -985,6 +1166,18 @@ class _InsightsPage extends StatelessWidget {
                 _PlanRow(
                   label: '期限14日以内',
                   value: '${urgentCount(opportunities)}件',
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: onPlanTap,
+                  icon: Icon(
+                    premiumUnlocked
+                        ? Icons.verified_outlined
+                        : Icons.workspace_premium_outlined,
+                  ),
+                  label: Text(
+                    premiumUnlocked ? 'Gimme Plus 有効' : 'Gimme Plusを見る',
+                  ),
                 ),
               ],
             ),
@@ -1023,6 +1216,252 @@ class _InsightsPage extends StatelessWidget {
         ),
         const _ComplianceNote(),
       ],
+    );
+  }
+}
+
+class PaywallPage extends StatelessWidget {
+  const PaywallPage({
+    super.key,
+    required this.unlocked,
+    required this.onUnlockChanged,
+  });
+
+  final bool unlocked;
+  final Future<void> Function(bool value) onUnlockChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Gimme Plus')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 32),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF12312E),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _Tag(label: 'Native-ready subscription'),
+                      const SizedBox(height: 14),
+                      const Text(
+                        '毎月、取り損ねを先回りで見つける',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '制度更新、期限通知、家族共有、書類チェックをまとめて監視します。',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFFD6E8E4),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text(
+                            '¥1,480',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              '/月',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(color: const Color(0xFFD6E8E4)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Plusで解放するもの',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 12),
+                        const _PlanFeature(
+                          icon: Icons.notification_important_outlined,
+                          title: '期限と制度更新の監視',
+                          text: '住んでいる地域と世帯条件から、期限前に候補を出します。',
+                        ),
+                        const _PlanFeature(
+                          icon: Icons.document_scanner_outlined,
+                          title: '書類の抜け漏れチェック',
+                          text: '提出前に必要書類と入力漏れをクエスト単位で確認します。',
+                        ),
+                        const _PlanFeature(
+                          icon: Icons.family_restroom_outlined,
+                          title: '家族共有',
+                          text: '配偶者、親、子どもの条件を同意つきで管理します。',
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            await onUnlockChanged(!unlocked);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    !unlocked
+                                        ? '確認版でGimme Plusを有効にしました'
+                                        : '確認版でGimme Plusを無効にしました',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          icon: Icon(
+                            unlocked
+                                ? Icons.lock_open_outlined
+                                : Icons.workspace_premium_outlined,
+                          ),
+                          label: Text(
+                            unlocked ? '確認版の有効状態を解除' : '確認版でPlusを有効化',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Web確認版では購入をシミュレートします。Android/iOS正式版ではGoogle Play Billing / StoreKitの商品IDに接続します。',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: const Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PrivacyPolicyPage extends StatelessWidget {
+  const PrivacyPolicyPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('プライバシー')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 32),
+              children: const [
+                _PolicySection(
+                  title: '確認版のデータ保存',
+                  text:
+                      'このWeb確認版では、世帯人数、医療費、サブスク額、チェックリストの進捗を端末内の保存領域にのみ保存します。外部サーバーへ送信しません。',
+                ),
+                _PolicySection(
+                  title: '正式版で追加される可能性',
+                  text:
+                      'Android/iOS正式版では、制度データ更新、通知、家族共有、課金管理のためにサーバー連携を追加する可能性があります。その場合は送信項目、保存期間、削除方法を明記します。',
+                ),
+                _PolicySection(
+                  title: '金額表示について',
+                  text:
+                      '表示額は見落とし候補を発見するための概算レンジです。税務、法律、行政手続きの助言ではありません。申請前には一次情報と専門家情報を確認してください。',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanFeature extends StatelessWidget {
+  const _PlanFeature({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFF0F766E)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 2),
+                Text(text),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PolicySection extends StatelessWidget {
+  const _PolicySection({required this.title, required this.text});
+
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text(text),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1095,7 +1534,7 @@ class _BigStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 142,
+      width: 168,
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
@@ -1106,7 +1545,11 @@ class _BigStat extends StatelessWidget {
         children: [
           Text(label, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 5),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+            softWrap: true,
+          ),
         ],
       ),
     );
@@ -1168,6 +1611,8 @@ Color _categoryColor(String category) {
       return const Color(0xFF0F766E);
     case '介護':
       return const Color(0xFFB45309);
+    case '生活':
+      return const Color(0xFF0891B2);
     default:
       return const Color(0xFF475569);
   }
@@ -1185,6 +1630,8 @@ IconData _categoryIcon(String category) {
       return Icons.credit_card_outlined;
     case '介護':
       return Icons.elderly_outlined;
+    case '生活':
+      return Icons.move_down_outlined;
     default:
       return Icons.receipt_long_outlined;
   }

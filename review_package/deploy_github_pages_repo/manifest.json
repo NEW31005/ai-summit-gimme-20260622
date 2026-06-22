@@ -1,11 +1,11 @@
 {
-    "name": "gimme",
-    "short_name": "gimme",
+    "name": "Gimme - 世帯のもらい損ね奪還",
+    "short_name": "Gimme",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F7F6",
+    "theme_color": "#0F766E",
+    "description": "制度、控除、返金、サブスク解約忘れを世帯単位で見つける確認アシスタント。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

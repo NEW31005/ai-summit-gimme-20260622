@@ -4,6 +4,15 @@
 
 このZIPは、AI Summit 6.0 第2回で選ばれたアプリ `Gimme` のレビュー用パッケージです。
 
+2026-06-22のClaude一次レビュー指摘を受けて、以下を反映した改善版です。
+
+- 金額を一点表示から概算レンジ表示に変更
+- 各候補へ推定根拠を追加
+- 医療費控除を「支払額が戻る」表現から、還付/軽減見込みの説明へ修正
+- 免責とプライバシー表示を追加
+- `Gimme Plus` の課金画面と確認版の有効化状態を追加
+- Flutterテンプレート由来のメタデータ、Android application id、iOS bundle idを修正
+
 あなたには、以下の観点で厳しめにレビューしてほしいです。
 
 1. アプリ企画として本当にヒットしそうか
@@ -69,4 +78,3 @@ Android debug APKはサイズが大きいため、このClaude添付用ZIPには
 - `flutter build web`: pass
 - `flutter build apk --debug`: pass
 - GitHub Pagesスマホ幅表示確認: pass
-

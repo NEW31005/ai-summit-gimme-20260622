@@ -1,17 +1,15 @@
-# gimme
+# Gimme
 
-A new Flutter project.
+Gimme is a mobile-first household reclaim assistant. It helps families find missed benefits, deductions, refunds, subscription leaks, and move-related rebates, then turns each candidate into a clear quest with documents, steps, deadlines, and estimate basis.
 
-## Getting Started
+## Current Build
 
-This project is a starting point for a Flutter application.
+- Flutter Web verification preview
+- Android/iOS native mobile release target
+- Local-only profile storage in the preview build
+- Range-based money estimates with visible basis and compliance notes
+- Native-ready `Gimme Plus` subscription screen with simulated Web purchase state
 
-A few resources to get you started if this is your first Flutter project:
+## Preview Limitations
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This build is for product validation. Amounts are estimate ranges, not guaranteed payments, refunds, tax advice, or legal advice. Production release needs verified official data sources, store billing products, privacy policy hosting, and final legal/tax review.
