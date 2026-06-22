@@ -124,3 +124,7 @@ Verification before push:
 - `flutter test`: pass, 17 tests
 - `flutter build web --base-href /ai-summit-gimme-20260622/`: pass
 - `flutter build apk --debug`: pass
+- Public `version.json`: `1.2.0+7`
+- Public mobile visual check: pass at 390 x 844, no console errors, no horizontal overflow
+
+GitHub Pages repository commit: `7a9b262 Deploy Gimme build 7 subscription lifecycle`.

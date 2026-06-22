@@ -164,6 +164,8 @@ Verification:
 - `flutter test`: pass, 17 tests
 - `flutter build web --base-href /ai-summit-gimme-20260622/`: pass
 - `flutter build apk --debug`: pass
+- Public `version.json`: `1.2.0+7`
+- Public mobile visual check: pass at 390 x 844, `scrollWidth=390`, no browser console errors
 
 Known notes:
 - This is still a Web preview plus native-ready Flutter code. Web preview intentionally uses no real purchase.
