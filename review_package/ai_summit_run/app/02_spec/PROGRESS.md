@@ -31,9 +31,12 @@
 - [x] Claude final rereview accepted as valid product-quality critique
 - [x] 80+ replacement design saved: `gimme-80plus-redesign-spec.md`
 - [x] Implementation prompt saved: `gimme-80plus-implementation-prompt.md`
+- [x] Claude 80+ redesign review requested and saved: `../04_reports/claude-80plus-redesign-review-20260623.md`
 - [ ] Replace handwritten benefit amount ranges with source-backed rules
 - [ ] Implement real child allowance rule from official source
 - [ ] Implement medical expense deduction formula from official source
 - [ ] Normalize subscription statement periods before monthly totals
 - [ ] Replace preview premium toggle with real entitlement architecture
 - [ ] Add first-run onboarding and source-backed opportunity detail UI
+- [ ] Revise child allowance model for 18-22 economically supported older siblings and confirmation-form condition
+- [ ] Add monetization funnel, Free/Plus boundary, and monthly recurring value design
