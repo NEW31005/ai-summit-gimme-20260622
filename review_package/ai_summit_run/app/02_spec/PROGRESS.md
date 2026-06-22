@@ -26,3 +26,14 @@
 - [x] Prepared value and actual recovered value separated
 - [x] AI statement scan flow added
 - [x] Android/iOS metadata cleanup completed
+
+## 2026-06-23 80+ Redesign
+- [x] Claude final rereview accepted as valid product-quality critique
+- [x] 80+ replacement design saved: `gimme-80plus-redesign-spec.md`
+- [x] Implementation prompt saved: `gimme-80plus-implementation-prompt.md`
+- [ ] Replace handwritten benefit amount ranges with source-backed rules
+- [ ] Implement real child allowance rule from official source
+- [ ] Implement medical expense deduction formula from official source
+- [ ] Normalize subscription statement periods before monthly totals
+- [ ] Replace preview premium toggle with real entitlement architecture
+- [ ] Add first-run onboarding and source-backed opportunity detail UI
