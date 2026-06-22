@@ -1,0 +1,126 @@
+{
+  "run_id": "2026-06-25_frame2-genre-002",
+  "title": "frame2-genre-002",
+  "date": "2026-06-25",
+  "run_state": "initialized",
+  "chat_policy": "one_app_one_codex_chat; pause_after_21:00_mahime_handoff; resume_same_chat_at_02:00_when_possible; manual_N番進めて_resumes_immediately",
+  "generated_artifacts_policy": "scaffold_creates_directories_and_state_only; do_not_create_empty_success_placeholders; generated_md_files_must_contain_valid_phase_content",
+  "cadence": {
+    "initial": "twice_weekly",
+    "quota_policy": "reduce_to_weekly_only_if_quota_consumption_requires_it",
+    "monday_build_slot": "claude_code_native_desktop_app_code_tab_builder",
+    "thursday_build_slot": "codex_direct_builder",
+    "idea_frame_rotation": "1,2,2,1,1,2,2 across scheduled app runs; not tied permanently to weekday",
+    "frame_1": "existing_proven_market_brushup_from_popular_top_apps_plus_alpha",
+    "frame_2": "original_future_demand_ideas",
+    "finalist_prep": "complete_rounds_and_top5_before_previous_day_21:00_local",
+    "champion_checkpoint": "previous_day_21:00_local",
+    "build_kickoff": "target_day_02:00_local_after_shinchan_selection"
+  },
+  "summit_mode": "thursday_original",
+  "build_slot": "thursday",
+  "builder_rule": "Codex direct implementation",
+  "idea_frame": "2_original_future_demand",
+  "topic_pool_reference": "references/topic-pool.md",
+  "mode_policy": "Build slot: Thursday / builder: Codex direct implementation. Idea frame 2: original/future-demand. Prioritize sharp, uncommon ideas based on future demand, new behavior patterns, AI-era workflows, underserved needs, and timing. Hit potential and recurring revenue potential are the first criteria; do not become conservative early.",
+  "providers": [
+    "chatgpt",
+    "claude",
+    "gemini",
+    "grok"
+  ],
+  "provider_naming": "browser",
+  "model_policy": "use_highest_already_available_visible_model_per_provider; do_not_purchase_paid_addons_without_shinchan_approval; record_exact_labels_and_paid_gates",
+  "model_selection_notes": {
+    "write_to": "state/model-selection.md",
+    "browser_notes": "state/browser-run-notes.md",
+    "chatgpt": "if `5.5 最高` is still highest visible selectable level, use it and record exact label; otherwise record changed top label",
+    "grok": "if Heavy is pay-gated, use Expert and record `Heavy paid gate -> Expert selected`",
+    "claude_gemini": "use highest visible selectable reasoning/pro/advanced option already available"
+  },
+  "champion_decider": "shinchan_numbered_selection",
+  "selection_bridge": {
+    "primary_route": "openclaw_mahime_ai_summit_room",
+    "return_file": "C:\\Users\\Rig5070\\Documents\\AI_Summits\\ai-summit\\runs\\2026-06-25_frame2-genre-002\\final\\inbox\\mahime_champion_selection.md",
+    "atomic_write": "mahime_champion_selection.md.tmp_then_rename",
+    "check_at": "target_day_02:00_local_before_final_spec"
+  },
+  "champion_priority": [
+    "hit_potential",
+    "recurring_revenue_potential",
+    "clear_payer_and_payment_reason",
+    "ltv_or_unit_economics_potential",
+    "market_demand_or_future_timing",
+    "ai_native_strength_when_it_improves_product_or_monetization",
+    "product_sharpness",
+    "mainstream_consumer_app_quality",
+    "non_ai_generated_ui_and_presentation_feel"
+  ],
+  "ai_native_idea_policy": "generative_ai_agents_multi_ai_workflows_personalization_automation_and_ai_era_behavior_changes_are_welcome_when_they_strengthen_hit_potential_or_recurring_monetization; do_not_downrank_ideas_merely_because_they_use_ai; reject_shallow_ai_wrappers_without_product_or_monetization_strength",
+  "early_round_policy": "do_not_over_filter_for_tech_cost_legal_safety_or_build_difficulty; record_risks_then_keep_strong_ideas_until_top5",
+  "hard_exclusions": [
+    "direct_existing_character_ip",
+    "protected_brand_or_asset_clone",
+    "major_studio_scale_game",
+    "clearly_illegal_activity",
+    "unsafe_core_implementation"
+  ],
+  "monetization_policy": "hit_potential_and_continuous_revenue_first; payer_payment_reason_and_retention_must_be_concrete",
+  "deploy_policy": {
+    "verification_preview": "flutter_web_public_https_url_accessible_from_smartphone",
+    "official_release_target": "android_ios_native_mobile_apps",
+    "preferred_order": [
+      "cloudflare_pages",
+      "vercel",
+      "netlify",
+      "github_pages",
+      "firebase_hosting",
+      "comparable_static_host"
+    ],
+    "not_completed_preview_verification": [
+      "localhost",
+      "lan_ip",
+      "file_url",
+      "local_http_server",
+      "local_tunnel"
+    ]
+  },
+  "app_root": "C:\\dev",
+  "app_project_path": "C:\\dev\\summit_2026_06_25_frame2_genre_002",
+  "app_path_policy": "APP_PATH_txt_is_intended_project_pointer_only; implementation_is_valid_only_after_real_flutter_project_exists_under_C_dev_with_pubspec_and_lib_main",
+  "app_target": "android_ios_native_official_release_with_flutter_web_public_https_preview",
+  "builder_preference": "monday_claude_code_native_desktop_app_code_tab_first_not_cli; thursday_codex_first; codex_fallback_for_claude_native_app_429_or_blockers_when_feasible; claude_code_cli_only_with_shinchan_explicit_approval",
+  "claude_code_builder_interface": {
+    "preferred_surface": "native_desktop_app",
+    "required_area": "Code tab/session",
+    "open_method": "Windows taskbar or Start menu, then select Code and start/continue a Code session",
+    "reason": "Shinchan can inspect and continue the same native-app session manually",
+    "cli_policy": "do_not_use_by_default; use_only_with_shinchan_explicit_cli_oauth_approval"
+  },
+  "rounds": {
+    "round-1": {
+      "state": "pending"
+    },
+    "round-2": {
+      "state": "pending"
+    },
+    "round-3": {
+      "state": "pending"
+    },
+    "round-4": {
+      "state": "pending"
+    }
+  },
+  "finalists": {
+    "state": "pending",
+    "count": 5
+  },
+  "shinchan_selection": {
+    "state": "pending",
+    "selected_number": null
+  },
+  "app": {
+    "state": "pending",
+    "project_path": "C:\\dev\\summit_2026_06_25_frame2_genre_002"
+  }
+}

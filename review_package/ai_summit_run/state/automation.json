@@ -1,0 +1,31 @@
+{
+  "created_at": "2026-06-22T17:58:53",
+  "created_by": "manual_automation_start",
+  "run_date": "2026-06-25",
+  "mode": "thursday_original",
+  "build_slot": "thursday",
+  "builder_rule": "Codex direct implementation",
+  "idea_frame": 2,
+  "idea_frame_label": "② original/future-demand",
+  "frame_rotation": [
+    1,
+    2,
+    2,
+    1,
+    1,
+    2,
+    2
+  ],
+  "rotation_anchor": "2026-06-22",
+  "topic_genre_no": 2,
+  "topic_genre": "AI生活補助",
+  "topic_title": "frame2-genre-002",
+  "topic": "枠② / 斬新・未来需要・独創性主体の案。\nジャンル No.2: AI生活補助\n\nこのジャンルで、これから需要が増える行動、AI時代に変化する生活/仕事/人間関係、まだ一般化していない強い体験、生成AI・エージェント・多AI連携・自動化・パーソナライズだから成立する新しい価値を狙う。\n\n技術難度、制作コスト、法務/安全性の精査は初期選考では主な減点にしない。リスクは記録しつつ、世に出たらヒットするか、継続収益が成立するか、他にない強さがあるかを最優先にする。\n\nビルド担当枠: thursday\nビルドルール: Codex direct implementation\n正式リリース前提はAndroid/iOSネイティブモバイルアプリ。Flutter Webはスマホから確認するための公開HTTPSプレビューであり、正式なWebアプリリリースではない。\n",
+  "topic_reason": "Frame 2 uses original/future-demand ideation.",
+  "topic_pool_reference": "C:\\Users\\Rig5070\\.codex\\skills\\ai-summit-browser-runner\\references\\topic-pool.md",
+  "run_path": "C:\\Users\\Rig5070\\Documents\\AI_Summits\\ai-summit\\runs\\2026-06-25_frame2-genre-002",
+  "resume_prompt_path": "C:\\Users\\Rig5070\\Documents\\AI_Summits\\ai-summit\\runs\\2026-06-25_frame2-genre-002\\RESUME_02_PROMPT.md",
+  "latest_prepared_run_txt_is_fallback_only": true,
+  "chat_policy": "one_app_one_codex_chat; 21:00 summit and 02:00 continuation stay in the same app chat when possible",
+  "next_action": "run AI Summit through the top-five finalist packet, send it through the Mahime bridge for the 21:00 Champion checkpoint, then at target-day 02:00 check Mahime's selection MD before final spec and app build"
+}

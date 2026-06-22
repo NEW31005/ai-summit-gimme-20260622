@@ -1,0 +1,8 @@
+{
+  "providers": [
+    "chatgpt",
+    "claude",
+    "gemini",
+    "grok"
+  ]
+}
